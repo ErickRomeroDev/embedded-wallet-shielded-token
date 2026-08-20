@@ -7,10 +7,16 @@ import { TestEnvironment } from './simulators/simulator';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import 'dotenv/config';
 import * as Rx from 'rxjs';
-import { TOKEN_NAME, TOKEN_SYMBOL, TOKEN_DECIMALS } from '@eddalabs/contract';
+import {
+  TOKEN_NAME,
+  TOKEN_SYMBOL,
+  TOKEN_DECIMALS,
+  createPrivateState,
+  computeOwnerCommitment,
+} from '@eddalabs/contract';
 
 // NOTE: reuses the standalone.yml docker services — cannot run concurrently
-// with a live `deploy-standalone` stack (same constraint as counter.test.ts).
+// with a live `deploy-standalone` stack.
 
 let logDir: string;
 const network = process.env.TEST_ENV || 'undeployed';
@@ -25,6 +31,11 @@ const logger = await createLogger(logDir);
 
 const MINT_AMOUNT = 1_000n;
 const BURN_AMOUNT = 400n;
+
+// Owner secret: in production this is derived from the deployer's passkey in
+// the browser; here we generate one the way the web app would.
+const ownerSecret = globalThis.crypto.getRandomValues(new Uint8Array(32));
+const ownerCommitment = computeOwnerCommitment(ownerSecret);
 
 describe('Shielded token', () => {
   let testEnvironment: TestEnvironment;
@@ -43,14 +54,21 @@ describe('Shielded token', () => {
     1000 * 60 * 45,
   );
 
-  afterAll(async () => {
-    await testEnvironment.shutdown();
-  });
+  afterAll(
+    async () => {
+      await testEnvironment.shutdown();
+    },
+    1000 * 60 * 5,
+  );
 
   it('should deploy, mint to self, observe wallet balance, and burn [@slow]', async () => {
-    const contract = await api.deploy(providers, { privateCounter: 0 });
+    const contract = await api.deploy(providers, createPrivateState(ownerSecret), ownerCommitment);
     expect(contract).not.toBeNull();
     const contractAddress = contract.deployTxData.public.contractAddress;
+
+    // The commitment computed off-chain landed on the public ledger verbatim.
+    const ledgerCommitment = await api.getOwnerCommitmentFromLedger(providers, contractAddress);
+    expect(ledgerCommitment).toEqual(Buffer.from(ownerCommitment).toString('hex'));
 
     // Metadata lands on the public ledger exactly as passed to the constructor.
     const tokenState = await api.getTokenState(providers, contractAddress);
@@ -91,4 +109,32 @@ describe('Shielded token', () => {
     logger.info({ section: 'Balance after burn', balanceAfterBurn });
     expect(balanceAfterBurn).toEqual(MINT_AMOUNT - BURN_AMOUNT);
   }, 1000 * 60 * 20);
+
+  it('should reject mint from a non-owner secret [@slow]', async () => {
+    // Deploy a contract whose owner commitment belongs to a DIFFERENT secret
+    // than the one in our private state: the witness proves knowledge of the
+    // wrong preimage and the circuit's owner assertion fails locally, before
+    // any transaction is submitted.
+    const strangerSecret = globalThis.crypto.getRandomValues(new Uint8Array(32));
+    const foreignCommitment = computeOwnerCommitment(
+      globalThis.crypto.getRandomValues(new Uint8Array(32)),
+    );
+    const contract = await api.deploy(providers, createPrivateState(strangerSecret), foreignCommitment);
+
+    const state = await Rx.firstValueFrom(wallet.wallet.state().pipe(Rx.filter((s) => s.isSynced)));
+    const ownCoinPublicKey = state.shielded.coinPublicKey.toHexString();
+
+    await expect(api.mint(contract, ownCoinPublicKey, MINT_AMOUNT)).rejects.toThrow(
+      /Ownable: caller is not the owner/,
+    );
+  }, 1000 * 60 * 20);
+
+  it('wallet functionalities', async () => {
+    logger.info({
+      section: 'Wallet Context',
+      dustSecretKey: wallet.dustSecretKey,
+      shieldedSecretKeys: wallet.shieldedSecretKeys,
+      unshieldedKeystore: wallet.unshieldedKeystore,
+    });
+  });
 });

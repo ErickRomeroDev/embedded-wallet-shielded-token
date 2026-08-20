@@ -6,6 +6,7 @@ import { type StartedDockerComposeEnvironment, type DockerComposeEnvironment } f
 import { type ModularProviders, type DeployedModularContract } from './common-types';
 import { type Config, UndeployedConfig } from './config';
 import * as api from './api';
+import { emptyPrivateState } from '@eddalabs/contract';
 
 let logger: Logger;
 
@@ -20,9 +21,9 @@ const GENESIS_MINT_WALLET_SEED = '0000000000000000000000000000000000000000000000
 const BANNER = `
 ╔══════════════════════════════════════════════════════════════╗
 ║                                                              ║
-║              Midnight Modular Example                        ║
-║              ─────────────────────                           ║
-║              A privacy-preserving smart contract demo        ║
+║              MintKey                                         ║
+║              ───────                                         ║
+║              A passkey-owned shielded token mint             ║
 ║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
 `;
@@ -48,20 +49,20 @@ const contractMenu = (dustBalance: string) => `
 ${DIVIDER}
   Contract Actions${dustBalance ? `                    DUST: ${dustBalance}` : ''}
 ${DIVIDER}
-  [1] Deploy a new counter contract
-  [2] Join an existing counter contract
+  [1] Deploy a new MintKey contract
+  [2] Join an existing MintKey contract
   [3] Monitor DUST balance
   [4] Exit
 ${'─'.repeat(62)}
 > `;
 
-/** Build the counter actions menu, showing current DUST balance in the header. */
-const counterMenu = (dustBalance: string) => `
+/** Build the token actions menu, showing current DUST balance in the header. */
+const tokenMenu = (dustBalance: string) => `
 ${DIVIDER}
-  Modular Actions${dustBalance ? `                     DUST: ${dustBalance}` : ''}
+  MintKey Actions${dustBalance ? `                     DUST: ${dustBalance}` : ''}
 ${DIVIDER}
-  [1] Increment counter
-  [2] Display current counter value
+  [1] Show token state (metadata, color, owner commitment)
+  [2] Monitor DUST balance
   [3] Exit
 ${'─'.repeat(62)}
 > `;
@@ -165,8 +166,17 @@ const deployOrJoin = async (
     switch (choice.trim()) {
       case '1':
         try {
-          const contract = await api.withStatus('Deploying counter contract', () =>
-            api.deploy(providers, { privateCounter: 0 }),
+          const envCommitment = process.env.OWNER_COMMITMENT?.trim();
+          const answer = await rli.question(
+            `Owner commitment (64 hex; from the web app's "Copy owner commitment")${envCommitment ? ` [.env: ${envCommitment.slice(0, 8)}…]` : ''}: `,
+          );
+          const commitmentHex = answer.trim() || envCommitment || '';
+          if (!/^[0-9a-fA-F]{64}$/.test(commitmentHex)) {
+            console.log('  ✗ Invalid owner commitment — expected 64 hex characters.\n');
+            break;
+          }
+          const contract = await api.withStatus('Deploying MintKey contract', () =>
+            api.deploy(providers, emptyPrivateState(), Uint8Array.from(Buffer.from(commitmentHex, 'hex'))),
           );
           console.log(`  Contract deployed at: ${contract.deployTxData.public.contractAddress}\n`);
           return contract;
@@ -213,29 +223,42 @@ const deployOrJoin = async (
 };
 
 /**
- * Main interaction loop. Once a contract is deployed/joined, the user
- * can increment the counter or query its current value.
+ * Main interaction loop. Once a contract is deployed/joined, the user can
+ * inspect the token's public state. Mint/burn are not offered here: they are
+ * owner-gated and the owner secret lives in the deployer's browser (passkey),
+ * so the web app is the owner surface.
  */
 const mainLoop = async (providers: ModularProviders, walletCtx: api.WalletContext, rli: Interface): Promise<void> => {
   const modularContract = await deployOrJoin(providers, walletCtx, rli);
   if (modularContract === null) {
     return;
   }
+  const contractAddress = modularContract.deployTxData.public.contractAddress;
 
   while (true) {
     const dustLabel = await getDustLabel(walletCtx.wallet);
-    const choice = await rli.question(counterMenu(dustLabel));
+    const choice = await rli.question(tokenMenu(dustLabel));
     switch (choice.trim()) {
       case '1':
         try {
-          await api.withStatus('Incrementing counter', () => api.increment(modularContract));
+          const tokenState = await api.getTokenState(providers, contractAddress);
+          const ownerCommitment = await api.getOwnerCommitmentFromLedger(providers, contractAddress);
+          if (tokenState === null) {
+            console.log(`  No contract state found at ${contractAddress}\n`);
+            break;
+          }
+          console.log(`  Name:             ${tokenState.name}`);
+          console.log(`  Symbol:           ${tokenState.symbol}`);
+          console.log(`  Decimals:         ${tokenState.decimals}`);
+          console.log(`  Token color:      ${api.getTokenColor(contractAddress)}`);
+          console.log(`  Owner commitment: ${ownerCommitment ?? '(none)'}\n`);
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
-          console.log(`  ✗ Increment failed: ${msg}\n`);
+          console.log(`  ✗ Failed to read token state: ${msg}\n`);
         }
         break;
       case '2':
-        await api.displayCounterValue(providers, modularContract);
+        await startDustMonitor(walletCtx.wallet, rli);
         break;
       case '3':
         return;
@@ -264,7 +287,7 @@ const mapContainerPort = (env: StartedDockerComposeEnvironment, url: string, con
  *   1. (Optional) Start Docker containers for proof server / node / indexer
  *   2. Build or restore a wallet and wait for it to be funded
  *   3. Configure midnight-js providers (proof server, indexer, wallet, private state)
- *   4. Enter the contract deploy/join and counter interaction loop
+ *   4. Enter the contract deploy/join and token interaction loop
  *   5. Clean up: close wallet, readline, and docker environment
  */
 export const run = async (config: Config, _logger: Logger, dockerEnv?: DockerComposeEnvironment): Promise<void> => {

@@ -13,7 +13,8 @@ export type ModularContract = Modular.Contract<ModularPrivateState>;
 export type DeployedModularContract = contracts.DeployedContract<ModularContract> | contracts.FoundContract<ModularContract>;
 
 export type UserAction = {
-  increment: string | undefined;
+  mint: string | undefined;
+  burn: string | undefined;
 };
 
 // Encoded Compact types as emitted in the generated contract .d.ts.
@@ -38,9 +39,10 @@ export type TokenState = {
 };
 
 export type DerivedState = {
-  readonly round: Modular.Ledger["Counter__round"];
+  // Owner commitment stored on the public ledger (hex), or null pre-join.
+  readonly ownerCommitmentHex: string | null;
 };
 
 export const emptyState: DerivedState = {
-  round: 0n,
+  ownerCommitmentHex: null,
 };

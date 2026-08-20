@@ -156,7 +156,7 @@ export class TestEnvironment {
     return mappedUrl.toString().replace(/\/+$/, '');
   };
 
-  static getProofServerContainer = async (env: string) =>
+  static getProofServerContainer = async (_env: string) =>
     await new GenericContainer('midnightntwrk/proof-server:8.0.3')
       .withExposedPorts(6300)
       .withCommand(['midnight-proof-server -v'])

@@ -15,7 +15,14 @@ import {
   type TokenState,
 } from './common-types';
 import { type Config, contractConfig } from './config';
-import { Modular, type ModularPrivateState, DEPLOY_ARGS, TOKEN_DOMAIN } from '@eddalabs/contract';
+import {
+  Modular,
+  type ModularPrivateState,
+  makeDeployArgs,
+  TOKEN_DOMAIN,
+  witnesses,
+  emptyPrivateState,
+} from '@eddalabs/contract';
 import * as ledger from '@midnight-ntwrk/ledger-v8';
 import {
   createKeystore,
@@ -52,9 +59,10 @@ export function setLogger(_logger: Logger) {
   logger = _logger;
 }
 
-// Pre-compile the counter contract with ZK circuit assets
+// Pre-compile the MintKey contract with real witnesses (wit_OwnableSK reads
+// the owner secret from private state) and ZK circuit assets.
 const modularCompiledContract = CompiledContract.make('modular', Modular.Contract).pipe(
-  CompiledContract.withVacantWitnesses,
+  CompiledContract.withWitnesses(witnesses),
   CompiledContract.withCompiledFileAssets(contractConfig.zkConfigPath),
 );
 
@@ -80,28 +88,32 @@ export const mnemonicToSeed = async (mnemonic: string): Promise<string> => {
   return Buffer.from(seed).subarray(0, 32).toString('hex');
 };
 
-export const getCounterLedgerState = async (
+/**
+ * The owner commitment currently stored on the contract's public ledger
+ * (persistentHash of the owner's secret key). The secret itself never
+ * appears on-chain.
+ */
+export const getOwnerCommitmentFromLedger = async (
   providers: ModularProviders,
   contractAddress: ContractAddress,
-): Promise<bigint | null> => {
+): Promise<string | null> => {
   utils.assertIsContractAddress(contractAddress);
-  logger.info('Checking contract ledger state...');
-  const state = await providers.publicDataProvider
-    .queryContractState(contractAddress)
-    .then((contractState: any) => (contractState != null ? Modular.ledger(contractState.data).Counter__round : null));
-  logger.info(`Ledger state: ${state}`);
-  return state;
+  const contractState = await providers.publicDataProvider.queryContractState(contractAddress);
+  if (contractState == null) return null;
+  const owner = Modular.ledger(contractState.data).Ownable__owner;
+  return owner.is_left ? Buffer.from(owner.left).toString('hex') : null;
 };
 
 export const joinContract = async (
   providers: ModularProviders,
   contractAddress: string,
+  privateState: ModularPrivateState = emptyPrivateState(),
 ): Promise<DeployedModularContract> => {
   const modularContract = await contracts.findDeployedContract(providers, {
     contractAddress,
     compiledContract: modularCompiledContract,
     privateStateId: ModularPrivateStateId,
-    initialPrivateState: { privateCounter: 0 },
+    initialPrivateState: privateState,
   });
   logger.info(`Joined contract at address: ${modularContract.deployTxData.public.contractAddress}`);
   return modularContract as DeployedModularContract;
@@ -110,27 +122,21 @@ export const joinContract = async (
 export const deploy = async (
   providers: ModularProviders,
   privateState: ModularPrivateState,
+  ownerCommitment: Uint8Array,
 ): Promise<DeployedModularContract> => {
-  logger.info('Deploying counter contract...');
+  logger.info('Deploying MintKey contract...');
   const modularContract = await contracts.deployContract(providers, {
     compiledContract: modularCompiledContract,
     privateStateId: ModularPrivateStateId,
     initialPrivateState: privateState,
-    args: [...DEPLOY_ARGS],
+    args: [...makeDeployArgs(ownerCommitment)],
   });
   logger.info(`Deployed contract at address: ${modularContract.deployTxData.public.contractAddress}`);
   return modularContract as unknown as DeployedModularContract;
 };
 
-export const increment = async (modularContract: DeployedModularContract): Promise<types.FinalizedTxData> => {
-  logger.info('Incrementing...');
-  const finalizedTxData = await modularContract.callTx.increment();
-
-  return finalizedTxData.public;
-};
-
 ///////////////////////////////////////////////////////////////////////////////
-// SHIELDED TOKEN (EDDA)
+// SHIELDED TOKEN (MKT)
 ///////////////////////////////////////////////////////////////////////////////
 
 /** Reads the token metadata from the contract's public ledger state. */
@@ -168,7 +174,8 @@ const coinKey = (coinPublicKeyHex: string): CoinKey => ({
 });
 
 /**
- * Mints `amount` EDDA to `recipientCoinPublicKeyHex` with a fresh random nonce.
+ * Mints `amount` MKT to `recipientCoinPublicKeyHex` with a fresh random nonce.
+ * Owner-gated: the providers' private state must hold the owner secret.
  * The returned coin info is the recipient's only copy — deliver it out of band.
  */
 export const mint = async (
@@ -188,7 +195,7 @@ export const mint = async (
 };
 
 /**
- * Burns `amount` EDDA. The coin is paid into the transaction by the caller's
+ * Burns `amount` MKT (owner-gated). The coin is paid into the transaction by the caller's
  * wallet during balancing; change (if any) is routed back to `refundToCoinPublicKeyHex`.
  */
 export const burn = async (
@@ -244,20 +251,6 @@ export const waitForShieldedTokenBalance = (
     ),
   );
 
-export const displayCounterValue = async (
-  providers: ModularProviders,
-  modularContract: DeployedModularContract,
-): Promise<{ counterValue: bigint | null; contractAddress: string }> => {
-  const contractAddress = modularContract.deployTxData.public.contractAddress;
-  const counterValue = await getCounterLedgerState(providers, contractAddress);
-  if (counterValue === null) {
-    logger.info(`There is no counter contract deployed at ${contractAddress}.`);
-  } else {
-    logger.info(`Current counter value: ${Number(counterValue)}`);
-  }
-  return { contractAddress, counterValue };
-};
-
 /**
  * Sign all unshielded offers in a transaction's intents, using the correct
  * proof marker for Intent.deserialize. This works around a bug in the wallet
@@ -266,7 +259,7 @@ export const displayCounterValue = async (
  */
 const signTransactionIntents = (
   tx: { intents?: Map<number, any> },
-  signFn: (payload: Uint8Array) => ledger.Signature,
+  signFn: (_payload: Uint8Array) => ledger.Signature,
   proofMarker: 'proof' | 'pre-proof',
 ): void => {
   if (!tx.intents || tx.intents.size === 0) return;

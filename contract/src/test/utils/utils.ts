@@ -7,6 +7,10 @@ export const randomBytes = (length: number): Uint8Array => {
 export const toHexPadded = (str: string, len = 64) =>
   Buffer.from(str, "ascii").toString("hex").padStart(len, "0");
 
+// Caller coin public keys shared by the simulator and tests.
+export const player1 = toHexPadded("player1");
+export const player2 = toHexPadded("player2");
+
 // Builder for the ZswapCoinPublicKey encoding ({ bytes: Bytes<32> }).
 import type { CoinKey } from "../simulators/simulator.js";
 

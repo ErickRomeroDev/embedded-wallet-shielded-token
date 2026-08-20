@@ -6,7 +6,7 @@ import { useWallet } from "@/modules/midnight/wallet-widget/hooks/useWallet";
 interface WalletGateButtonProps {
   /**
    * "signing" — needs the wallet connected, the contract joined, and the proof
-   * server online (increment, mint, burn).
+   * server online (mint, burn).
    * "pubkey" — only needs the wallet connected for its public key.
    */
   requires: "signing" | "pubkey";

@@ -26,7 +26,7 @@ export interface WalletContext {
   connectingWallet: boolean;
   open: boolean;
   setOpen: (value: boolean) => void;
-  error?: any | undefined;
+  error?: unknown;
   initialAPI: InitialAPI | undefined;
   connectedAPI: ConnectedAPI | undefined;
   serviceUriConfig: Configuration | undefined;
@@ -81,7 +81,7 @@ export const MidnightMeshProvider = ({
 export const useWalletStore = (logger?: Logger): WalletContext => {
   const [connectingWallet, setConnectingWallet] = useState<boolean>(false);
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<any | undefined>(undefined);
+  const [error, setError] = useState<unknown>(undefined);
   const [initialAPI, setInitialAPI] = useState<InitialAPI | undefined>(
     undefined
   );

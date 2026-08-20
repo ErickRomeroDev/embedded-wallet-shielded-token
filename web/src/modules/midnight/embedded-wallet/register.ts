@@ -12,12 +12,12 @@ import {
   endpointsForNetwork,
 } from "./config";
 import { createPasskey, derivePrfSecret } from "./passkey";
-import { prfToSeedHex } from "./seed";
+import { prfToSeedHex, prfToOwnerSecret } from "./seed";
 import { getCredentialRecord, saveCredentialRecord, clearCredentialRecord } from "./storage";
 import { makeConnectedAPI, type EmbeddedConnectedAPI } from "./connected-api";
 import type { EmbeddedSession } from "./wallet";
 
-const FIXED_LABEL = "modular-starter wallet";
+const FIXED_LABEL = "mintkey wallet";
 
 // A small fingerprint glyph as a data URL for the chooser/connected button icon.
 const ICON_DATA_URL =
@@ -35,6 +35,12 @@ interface LiveConnection {
 let live: LiveConnection | null = null;
 let inFlight: { net: string; promise: Promise<EmbeddedConnectedAPI> } | null = null;
 
+// The Ownable owner secret: a second, domain-separated HKDF derivation of the
+// same passkey PRF output. Held in memory for the life of the session only —
+// the contract SDK reads it via getOwnerSecret() to prove ownership in mint/
+// burn circuits. Never persisted, never sent anywhere.
+let ownerSecret: Uint8Array | null = null;
+
 async function doConnect(net: string): Promise<EmbeddedConnectedAPI> {
   const endpoints = endpointsForNetwork(net);
 
@@ -46,6 +52,7 @@ async function doConnect(net: string): Promise<EmbeddedConnectedAPI> {
   }
   const prf = await derivePrfSecret(record);
   const seedHex = await prfToSeedHex(prf);
+  ownerSecret = await prfToOwnerSecret(prf);
 
   // Set the network id BEFORE building — config builders and createKeystore
   // read the global (walletController re-sets the same value after connect).
@@ -138,11 +145,40 @@ export async function revealSeed(): Promise<string> {
   return prfToSeedHex(prf);
 }
 
+/**
+ * The passkey-derived Ownable owner secret for the live session, or null when
+ * no embedded session is up (locked, or connected via an extension wallet).
+ */
+export function getOwnerSecret(): Uint8Array | null {
+  return live && ownerSecret ? Uint8Array.from(ownerSecret) : null;
+}
+
+/**
+ * Derives the owner commitment (hex) directly from the passkey, creating the
+ * passkey if needed — no wallet session or deployed contract required. This is
+ * the deploy handshake: the deployer runs this BEFORE any contract exists and
+ * passes the hex to the deploy script as OWNER_COMMITMENT. Only the hash
+ * leaves this function; the secret is discarded.
+ */
+export async function deriveOwnerCommitmentHex(): Promise<string> {
+  let record = getCredentialRecord();
+  if (!record) {
+    const ref = await createPasskey(FIXED_LABEL);
+    record = saveCredentialRecord(ref);
+  }
+  const prf = await derivePrfSecret(record);
+  const sk = await prfToOwnerSecret(prf);
+  // Lazy import: computeOwnerCommitment pulls in the compact-runtime WASM.
+  const { computeOwnerCommitment, toHex } = await import("@eddalabs/contract");
+  return toHex(computeOwnerCommitment(sk));
+}
+
 /** Stops the live session (keeps the credential record for reconnect). */
 export async function lockEmbeddedWallet(): Promise<void> {
   const current = live;
   live = null;
   inFlight = null;
+  ownerSecret = null;
   if (current) await current.session.stop();
 }
 

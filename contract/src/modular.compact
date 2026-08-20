@@ -10,16 +10,18 @@ import CompactStandardLibrary;
 //    NativeTokenConverter alongside NativeShieldedToken silently aliases it.
 //  * After adding a module, recompile and check contract-info.json's `ledger`
 //    array for field-name collisions.
-import "./modules/counter/Counter" prefix Counter_;
+import "./modules/access/Ownable" prefix Ownable_;
 import "./modules/shielded-token/NativeShieldedToken" prefix ShieldedToken_;
 
 ///////////////////////////////////////////////////////////////////////////////
 // PUBLIC STATE FROM MODULES
 ///////////////////////////////////////////////////////////////////////////////
 
-// _round is attacker-advanceable (increment is ungated). Do NOT derive nonces,
-// phase guards, or rotated keys from it without gating increment() first.
-export { Counter__round };
+// Ownable__owner holds the owner COMMITMENT: persistentHash([secretKey]).
+// The secret itself never appears on-chain; owner-gated circuits prove
+// knowledge of the preimage inside the ZK circuit via the wit_OwnableSK
+// witness.
+export { Ownable__isInitialized, Ownable__owner };
 export {
   ShieldedToken__name,
   ShieldedToken__symbol,
@@ -36,22 +38,25 @@ export {
 // fields, so it can only run here — never expose it as a circuit. Per the
 // module contract, initialize MUST be the only token operation performed in
 // the constructor (no pre-minting at deploy).
+//
+// `initialOwnerCommitment` is computed off-chain by the deployer as
+// persistentHash([secretKey]) (see contract/src/owner.ts). In MintKey the
+// secret is derived from the deployer's passkey in the browser and never
+// leaves it — only the commitment lands on-chain.
 constructor(
+  initialOwnerCommitment: Bytes<32>,
   domainSep: Bytes<32>,
   name_: Opaque<"string">,
   symbol_: Opaque<"string">,
   decimals_: Uint<8>
 ) {
+  Ownable_initialize(left<Bytes<32>, ContractAddress>(initialOwnerCommitment));
   ShieldedToken_initialize(domainSep, name_, symbol_, decimals_);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // CIRCUITS
 ///////////////////////////////////////////////////////////////////////////////
-
-export circuit increment(): [] {
-  return Counter_increment();
-}
 
 // Exposed as an on-chain oracle for the off-chain derivation
 // rawTokenType(domain, contractAddress); DApps read the color off-chain and
@@ -60,9 +65,10 @@ export circuit tokenColor(): Bytes<32> {
   return ShieldedToken_tokenColor();
 }
 
-// Mint and burn are deliberately ungated: anyone can create or destroy EDDA.
-// Fine for a starter, never for production — gate these wrappers with an
-// access-control module (e.g. Ownable) before real use.
+// Mint and burn are owner-gated: assertOnlyOwner recomputes
+// persistentHash(wit_OwnableSK()) inside the circuit and asserts it equals
+// the stored owner commitment. The proof reveals nothing about the caller
+// beyond "knows the preimage" — a private, gated circuit.
 //
 // Recipients are restricted to ZswapCoinPublicKey on purpose. This contract
 // exposes no receiveShielded/_burnFromSelf-backed circuit, so it can never
@@ -79,18 +85,17 @@ export circuit tokenColor(): Bytes<32> {
 // If mint amounts must be private, mint fixed denominations instead.
 //
 // `nonce` MUST be 32 bytes of CSPRNG output, kept secret until the coin is
-// delivered. Two properties depend on it:
-//   * recipient privacy — a guessable nonce lets an observer brute-force the
-//     coin commitment and deanonymise the recipient;
-//   * liveness — because mint is ungated, anyone who can predict a nonce can
-//     pre-mint the same commitment and permanently block that mint. Gate mint
-//     BEFORE composing any derived-nonce extension (derived nonces are
-//     predictable).
+// delivered: a guessable nonce lets an observer brute-force the coin
+// commitment and deanonymise the recipient. The pre-mint front-running
+// liveness attack that existed when mint was ungated is closed by the owner
+// gate, but keep the gate in place before composing any derived-nonce
+// extension (derived nonces are predictable).
 export circuit mint(
   recipient: ZswapCoinPublicKey,
   amount: Uint<64>,
   nonce: Bytes<32>
 ): ShieldedCoinInfo {
+  Ownable_assertOnlyOwner();
   assert(amount > 0, "modular: zero mint");
   return ShieldedToken__mint(
     left<ZswapCoinPublicKey, ContractAddress>(recipient),
@@ -104,9 +109,18 @@ export circuit burn(
   amount: Uint<128>,
   refundTo: ZswapCoinPublicKey
 ): Maybe<ShieldedCoinInfo> {
+  Ownable_assertOnlyOwner();
   return ShieldedToken__burn(
     coin,
     amount,
     left<ZswapCoinPublicKey, ContractAddress>(refundTo)
+  );
+}
+
+// Rotate the token authority to a new commitment (e.g. a new passkey).
+// Ownable gates this internally: only the current owner can transfer.
+export circuit transferOwnership(newOwnerCommitment: Bytes<32>): [] {
+  return Ownable_transferOwnership(
+    left<Bytes<32>, ContractAddress>(newOwnerCommitment)
   );
 }

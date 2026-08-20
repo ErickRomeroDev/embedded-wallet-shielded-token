@@ -1,51 +1,51 @@
 import { useNavigate } from '@tanstack/react-router';
-import { Wallet, Hash, Coins, ArrowRight, Shield, Zap, Lock } from 'lucide-react';
+import { Wallet, Fingerprint, Coins, ArrowRight, KeyRound, EyeOff, Blocks } from 'lucide-react';
 
 export function Home() {
   const navigate = useNavigate();
 
   const implementations = [
     {
-      title: 'Wallet Widget',
-      description: 'Connect and manage your Midnight wallet. View addresses, balances, and connection status in a unified dashboard.',
-      icon: Wallet,
-      path: '/wallet-ui' as const,
-      accent: 'from-violet-500/10 to-violet-500/5',
-      iconColor: 'text-violet-500',
-    },
-    {
-      title: 'Counter Module',
-      description: 'Interact with a deployed privacy-preserving smart contract. Experience zero-knowledge proofs in action.',
-      icon: Hash,
-      path: '/counter' as const,
-      accent: 'from-blue-500/10 to-blue-500/5',
-      iconColor: 'text-blue-500',
-    },
-    {
-      title: 'Shielded Tokens',
-      description: 'Mint and burn EDDA, a native shielded token issued by the same modular contract. Private balances, powered by Zswap.',
+      title: 'Mint & Burn MKT',
+      description: 'Issue MintKey Token, a native shielded token. Mint and burn are gated by a ZK proof that you hold the owner secret — derived from your passkey.',
       icon: Coins,
       path: '/tokens' as const,
       accent: 'from-emerald-500/10 to-emerald-500/5',
       iconColor: 'text-emerald-500',
     },
+    {
+      title: 'Passkey Wallet',
+      description: 'A full Midnight wallet running in your browser, its seed derived from a WebAuthn passkey (PRF → HKDF). No extension, no seed phrase to type.',
+      icon: Fingerprint,
+      path: '/wallet-ui' as const,
+      accent: 'from-violet-500/10 to-violet-500/5',
+      iconColor: 'text-violet-500',
+    },
+    {
+      title: 'Wallet Dashboard',
+      description: 'View addresses, shielded and unshielded balances, DUST status, and manage the embedded wallet session.',
+      icon: Wallet,
+      path: '/wallet-ui' as const,
+      accent: 'from-blue-500/10 to-blue-500/5',
+      iconColor: 'text-blue-500',
+    },
   ];
 
   const features = [
     {
-      icon: Shield,
-      title: 'Privacy First',
-      description: 'Built on Midnight Network with zero-knowledge proof technology.',
+      icon: KeyRound,
+      title: 'Your Passkey Is the Authority',
+      description: 'Only a hash of the passkey-derived owner secret lives on-chain. Minting proves knowledge of the preimage inside the ZK circuit.',
     },
     {
-      icon: Zap,
-      title: 'Fast & Modern',
-      description: 'React 19, Vite, and TypeScript for a blazing fast developer experience.',
+      icon: EyeOff,
+      title: 'Shielded by Default',
+      description: 'MKT is a native Zswap shielded token: balances and recipients stay private.',
     },
     {
-      icon: Lock,
-      title: 'Secure by Design',
-      description: 'Shielded transactions and encrypted state out of the box.',
+      icon: Blocks,
+      title: 'Composed from Modules',
+      description: 'OpenZeppelin Compact Ownable + NativeShieldedToken, composed and gated in an authored contract.',
     },
   ];
 
@@ -61,10 +61,12 @@ export function Home() {
               Midnight Network
             </div>
             <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-foreground mb-4">
-              Midnight Starter Template
+              MintKey
             </h1>
             <p className="text-lg text-muted-foreground leading-relaxed">
-              A production-ready foundation for building privacy-preserving decentralized applications on the Midnight Network.
+              A passkey-owned shielded token mint. Your WebAuthn passkey becomes the on-chain
+              token authority — mint and burn a private token straight from the browser,
+              with no wallet extension and no seed phrase.
             </p>
           </div>
         </div>
@@ -81,7 +83,7 @@ export function Home() {
               const Icon = item.icon;
               return (
                 <button
-                  key={item.path}
+                  key={item.title}
                   onClick={() => navigate({ to: item.path })}
                   className="group text-left bg-card rounded-xl border border-border/60 p-6 transition-all duration-200 hover:border-border hover:shadow-lg hover:shadow-black/[0.04] dark:hover:shadow-black/20"
                 >

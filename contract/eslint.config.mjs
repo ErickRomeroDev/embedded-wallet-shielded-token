@@ -28,6 +28,13 @@ export default [
         ecmaVersion: "latest",
         sourceType: "module",
         project: ["./tsconfig.json"]
+      },
+      globals: {
+        crypto: "readonly",
+        Buffer: "readonly",
+        TextEncoder: "readonly",
+        URL: "readonly",
+        process: "readonly"
       }
     },
     plugins: {
@@ -36,6 +43,10 @@ export default [
     },
     rules: {
       "prettier/prettier": "error",
+      "no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }
+      ],
       "@typescript-eslint/no-misused-promises": "off",
       "@typescript-eslint/no-floating-promises": "warn",
       "@typescript-eslint/promise-function-async": "off",

@@ -16,9 +16,9 @@
     }
   },
   "scripts": {
-    "test-undeployed": "vitest run counter.test.ts shielded-token.test.ts",
-    "test-preview": "RUN_ENV_TESTS=true TEST_ENV=preview vitest run counter.test.ts",
-    "test-preprod": "RUN_ENV_TESTS=true TEST_ENV=preprod vitest run counter.test.ts",
+    "test-undeployed": "vitest run shielded-token.test.ts",
+    "test-preview": "RUN_ENV_TESTS=true TEST_ENV=preview vitest run shielded-token.test.ts",
+    "test-preprod": "RUN_ENV_TESTS=true TEST_ENV=preprod vitest run shielded-token.test.ts",
     "deploy-standalone": "docker compose -f standalone.yml up -d --wait && tsx src/deploy/standalone.ts",
     "deploy-preview": "docker compose -f proof-server.yml up -d && tsx src/deploy/preview.ts",
     "deploy-preprod": "docker compose -f proof-server.yml up -d && tsx src/deploy/preprod.ts",

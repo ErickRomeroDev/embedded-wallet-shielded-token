@@ -1,6 +1,6 @@
 import { createLogger } from "../../logger.js";
 import { LogicTestingConfig } from "../../config.js";
-import { player1 } from "../counter.test.js";
+import { player1 } from "../utils/utils.js";
 
 import {
   Contract,
@@ -12,7 +12,8 @@ import {
   createPrivateState,
   witnesses
 } from "../../witnesses.js";
-import { DEPLOY_ARGS } from "../../token-metadata.js";
+import { makeDeployArgs } from "../../token-metadata.js";
+import { computeOwnerCommitment } from "../../owner.js";
 
 import {
   type CircuitContext,
@@ -38,10 +39,10 @@ export class ModularSimulator {
   readonly contract: Contract<ModularPrivateState>;
   circuitContext: CircuitContext<ModularPrivateState>;
   userPrivateStates: Record<string, ModularPrivateState>;
-  updateUserPrivateState: (newPrivateState: ModularPrivateState) => void;
+  updateUserPrivateState: (_newPrivateState: ModularPrivateState) => void;
   contractAddress: ContractAddress;
 
-  constructor(privateState: ModularPrivateState) {
+  constructor(privateState: ModularPrivateState, ownerCommitment?: Uint8Array) {
     this.contract = new Contract<ModularPrivateState>(witnesses);
     this.contractAddress = sampleContractAddress();
     const {
@@ -49,11 +50,12 @@ export class ModularSimulator {
       currentContractState,
       currentZswapLocalState
     } = this.contract.initialState(
-      createConstructorContext(
-        { privateCounter: privateState.privateCounter },
-        player1
-      ),
-      ...DEPLOY_ARGS
+      createConstructorContext(privateState, player1),
+      // Deployer's commitment defaults to the hash of their own secret,
+      // mirroring the passkey flow (commitment computed off-chain).
+      ...makeDeployArgs(
+        ownerCommitment ?? computeOwnerCommitment(privateState.ownableSecretKey)
+      )
     );
     this.circuitContext = {
       currentPrivateState,
@@ -65,14 +67,14 @@ export class ModularSimulator {
       costModel: CostModel.initialCostModel()
     };
     this.userPrivateStates = { ["p1"]: currentPrivateState };
-    this.updateUserPrivateState = (newPrivateState: ModularPrivateState) => {};
+    this.updateUserPrivateState = (_newPrivateState: ModularPrivateState) => {};
   }
 
-  static deployContract(secretKey: number): ModularSimulator {
+  static deployContract(secretKey: Uint8Array): ModularSimulator {
     return new ModularSimulator(createPrivateState(secretKey));
   }
 
-  createPrivateState(pName: string, secretKey: number): void {
+  createPrivateState(pName: string, secretKey: Uint8Array): void {
     this.userPrivateStates[pName] = createPrivateState(secretKey);
   }
 
@@ -81,7 +83,7 @@ export class ModularSimulator {
   ): CircuitContext<ModularPrivateState> {
     return {
       ...this.circuitContext,
-      currentPrivateState,
+      currentPrivateState
     };
   }
 
@@ -123,7 +125,9 @@ export class ModularSimulator {
     return this.getLedger();
   }
 
-  private contextFor(sender?: CoinPublicKey): CircuitContext<ModularPrivateState> {
+  private contextFor(
+    sender?: CoinPublicKey
+  ): CircuitContext<ModularPrivateState> {
     return {
       ...this.circuitContext,
       currentZswapLocalState: sender
@@ -190,21 +194,18 @@ export class ModularSimulator {
     };
   }
 
-  public increment(sender?: CoinPublicKey): Ledger {
-    // Update the current context to be the result of executing the circuit.
-    const circuitResults = this.contract.impureCircuits.increment({
-      ...this.circuitContext,
-      currentZswapLocalState: sender
-        ? emptyZswapLocalState(sender)
-        : this.circuitContext.currentZswapLocalState
-    }); 
+  public transferOwnership(
+    newOwnerCommitment: Uint8Array,
+    sender?: CoinPublicKey
+  ): Ledger {
+    const circuitResults = this.contract.impureCircuits.transferOwnership(
+      this.contextFor(sender),
+      newOwnerCommitment
+    );
 
-    logger.info("INCREMET CIRCUIT");
     logger.info({
-      section: "Circuit Results",
-      gasCost: circuitResults.gasCost,
-      proofData: circuitResults.proofData,
-      result: circuitResults.result
+      section: "TRANSFER OWNERSHIP Circuit Results",
+      gasCost: circuitResults.gasCost
     });
 
     return this.updateStateAndGetLedger(circuitResults);

@@ -1,87 +1,139 @@
-# Midnight Modular Starter
+# MintKey
 
-A pnpm + turbo monorepo starter for [Midnight](https://midnight.network) DApps built around a single **modular contract**: independent Compact modules (a public counter and a native shielded token) composed into one deployed contract, with a Node SDK layer, real-transaction tests, and a React frontend.
+**MintKey is a passkey-owned shielded token mint on the Midnight Network.** You create a WebAuthn passkey in your browser, and that passkey becomes the on-chain token authority: only you can mint and burn **MintKey Token (MKT)**, a native shielded (Zswap) token. Everything runs browser-native — the Midnight wallet itself is derived from the passkey (WebAuthn PRF → HKDF → wallet SDK in-browser), so there is **no extension dependency, no seed phrase to type, and no secret that ever leaves your device**.
 
-**Live demo:** https://template.preview.eddalabs.io/
+What the embedded wallet unlocks: a full shielded-token flow — sync, balance, transaction balancing, signing, submission — entirely inside the browser page. The current Lace shielded-spend issue makes this pattern especially useful *today* (extension users can't spend shielded coins), but that's context, not the reason MintKey exists: the passkey wallet is an identity and custody model of its own, and everything here stands unchanged once the extension issue is fixed.
 
-## Workspace layout
+**Live demo:** _redeploy pending — see Getting started_
 
-| Package | Path | What it is |
-|---|---|---|
-| `@eddalabs/contract` | `contract/` | The Compact contract (`src/modular.compact`) composed from modules under `src/modules/`, plus simulator-based unit tests |
-| `@eddalabs/node` | `node/` | Node-side SDK (`src/api.ts`), deploy scripts (`src/deploy/`), and integration tests that run real transactions against a dockerized standalone network |
-| `@eddalabs/web` | `web/` | Vite + React frontend (TanStack Router, Lace wallet via the dApp connector) with the contract SDK under `src/modules/midnight/modular-sdk/` |
+## How it works
 
-## The modular contract
+One passkey, two domain-separated HKDF derivations of its PRF output:
 
-`contract/src/modular.compact` composes two modules and exposes their circuits:
+```
+WebAuthn passkey ──PRF──▶ 32-byte secret
+   ├── HKDF("mintkey:wallet-seed:v0") ──▶ HD wallet seed  → shielded/unshielded/dust wallets
+   └── HKDF("mintkey:owner-sk:v0")    ──▶ owner secret sk → commitment = persistentHash([sk])
+```
 
-- **Counter** (`modules/counter/Counter.compact`) — public round counter; circuit `increment()`, ledger `Counter__round`.
-- **Shielded token** (`modules/shielded-token/`, vendored from [OpenZeppelin compact-contracts](https://github.com/OpenZeppelin/compact-contracts) v0.3.0-alpha.1, MIT) — a native shielded (Zswap) token, **EDDA** (`Edda Token`, 6 decimals). Circuits `mint`, `burn`, `tokenColor`; metadata on the public ledger (`ShieldedToken__name` etc.), fixed at deployment by constructor args (see `contract/src/token-metadata.ts`, the single source of truth shared by node and web).
+- At **deploy**, the contract constructor stores your commitment `persistentHash([sk])` in the `Ownable` module's ledger state. Only the hash goes on-chain.
+- At **mint/burn**, the circuit calls `Ownable_assertOnlyOwner()`: the `wit_OwnableSK` witness injects your secret into the ZK proof, which recomputes the hash and asserts it matches the stored commitment. The proof reveals nothing beyond "the caller knows the preimage" — a private, gated circuit.
+- **Public** on-chain: the owner commitment, token metadata, and mint amounts (a protocol requirement — value created ex nihilo must be publicly accounted). **Private**: the owner secret, mint recipients and nonces, and all burn arguments.
 
-Naming convention: `counter`-named things are specific to the counter module; everything contract-general is `modular`-named.
+## Prerequisites
 
-### Shielded token trade-offs (read before production use)
+- **Node.js ≥ 22** and **pnpm 10**
+- **Docker** (standalone network: `midnight-node` 0.22.2, `indexer-standalone` 4.0.1, `proof-server` 8.0.3)
+- **Compact developer tools** with **compiler 0.31.0** (`compact compile +0.31.0` is pinned in the contract package):
+  ```bash
+  curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh | sh
+  compact update 0.31.0
+  ```
+- **A PRF-capable passkey authenticator**: Touch ID / iCloud Keychain (macOS/iOS 18+), Google Password Manager passkeys (Android/ChromeOS), or a PRF-capable security key. Windows Hello does **not** support the PRF extension.
+- Chrome or another browser with WebAuthn PRF support; open the app at `http://localhost:5174/` (passkeys need a valid domain — bare IPs won't work).
 
-- **Mint and burn are ungated** — anyone can mint or burn EDDA. That is a deliberate starter simplification and means unlimited public inflation. Before real use, gate the `mint`/`burn` wrapper circuits in `modular.compact` with an access-control module (e.g. OpenZeppelin's `Ownable`).
-- **Contract-minted coins are invisible to wallets by scanning** — the coin info returned by `mint` is the recipient's only copy and should be delivered out of band. The verified exception: the *submitting* wallet detects its own minted coins by syncing. The deploy flow relies on this (mint to the genesis wallet, then a normal wallet-to-wallet shielded transfer, which recipients *can* detect); the web app additionally records minted coins in localStorage.
-- The token color is `tokenType(domain, contractAddress)` — derived off-chain everywhere via `rawTokenType` (execution-verified to match the `tokenColor` circuit).
+> **Preview / Preprod caveat:** deploying and minting on a public testnet needs a **faucet-funded wallet** ([preview faucet](https://faucet.preview.midnight.network/)), generated **tDUST** for fees (NIGHT must be registered for DUST generation — the app and deploy scripts do this automatically, but generation takes a few minutes), and the **local proof server** running (`docker compose -f node/proof-server.yml up -d`). First wallet sync on a public network can take several minutes. The end-to-end flow is execution-verified on standalone by the test suite; on preview/preprod expect the same flow with longer waits.
 
 ## Getting started
 
 ```bash
 pnpm install
-pnpm compact          # compile the contract (turbo)
-pnpm build            # build all packages
+pnpm compact   # compile the contract (populates contract/src/managed)
+pnpm build
 ```
 
-### Standalone network: deploy + fund your wallet
-
-1. Copy `node/.env_template` to `node/.env` and fill in both addresses from your Lace wallet:
-   - `MY_UNDEPLOYED_UNSHIELDED_ADDRESS` (`mn_addr_undeployed1...`) — receives tNight
-   - `MY_UNDEPLOYED_SHIELDED_ADDRESS` (`mn_shield-addr_undeployed1...`) — receives EDDA
-2. Run:
+**1. Get your owner commitment (browser).** Start the frontend — with no contract configured it renders a bootstrap page:
 
 ```bash
-cd node
-pnpm deploy-standalone
+pnpm dev:frontend   # http://localhost:5174/
 ```
 
-This starts the docker stack (`standalone.yml`), deploys the contract, funds your wallet with tNight **and** 1000 EDDA (mint → wallet shielded transfer), and writes `node/deployments/undeployed.json`. The stack keeps running; stop it with `pnpm standalone-down`.
+Click **"Create / show my owner commitment"** — this creates your passkey (first time) and shows the 64-hex commitment. Copy it.
 
-3. Point the web app at the deployment:
+**2. Deploy (node).** Configure `node/.env` from `node/.env_template`, at minimum:
 
 ```bash
-cd web
-echo "VITE_CONTRACT_ADDRESS=<contractAddress from deployments/undeployed.json>" > .env
-pnpm build   # copies proof keys/zkir into public/midnight/modular
-pnpm dev
+OWNER_COMMITMENT="<the hex you copied>"
+MY_UNDEPLOYED_UNSHIELDED_ADDRESS="mn_addr_undeployed1..."   # optional NIGHT funding target
 ```
 
-Connect your wallet (undeployed network), then use the **Counter** page to increment and the **Tokens** page to mint/burn EDDA.
+```bash
+pnpm deploy-standalone   # starts the docker stack, deploys, funds NIGHT
+```
 
-## Wallets
+The deploy cannot mint tokens — mint is gated to *your* passkey, and the deploy script never sees your secret. It writes `node/deployments/undeployed.json` with the contract address.
 
-The app offers two connection options in the wallet dialog:
+**3. Join and mint (browser).** Put the address in `web/.env` (`VITE_CONTRACT_ADDRESS="..."`), restart Vite, connect the **Passkey Wallet**, and open the **Mint** page. You'll see *"You are the token authority"* — mint MKT to yourself, watch the shielded balance appear, burn some back. Anyone else (or any extension wallet) sees the same page read-only.
 
-- **Extension wallets** (Lace, etc.) via the Midnight dApp connector.
-- **Passkey Wallet** — an embedded wallet whose HD seed is derived from a WebAuthn passkey (PRF extension). No extension needed; the seed/keys/addresses are all computed from the passkey. Needs a platform authenticator with PRF support (Touch ID / Windows Hello / recent Android / PRF-capable security key) and a secure context (`localhost` is fine). Lives in `web/src/modules/midnight/embedded-wallet/`.
+Stop the stack with `pnpm standalone-down`.
 
-The passkey seed is bound to the authenticator — if the passkey is lost and wasn't synced (iCloud/Google), the wallet is unrecoverable. The wallet dashboard (`/wallet-ui`) has a **Reveal seed (backup)** action (behind a fresh passkey confirmation) to save the seed. Proving still uses the local proof server (`127.0.0.1:6300`); in-browser proving is not enabled.
+## Workspace layout
 
-**Funding the embedded wallet on standalone:** unlike Lace, the embedded wallet has its own addresses. Connect via Passkey first, copy its **Unshielded** and **Shielded** addresses from `/wallet-ui`, put them into `node/.env` (`MY_UNDEPLOYED_UNSHIELDED_ADDRESS` / `MY_UNDEPLOYED_SHIELDED_ADDRESS`), then run `pnpm deploy-standalone`. NIGHT is auto-registered for DUST generation on connect once it arrives (there's also a manual **Register for DUST** button).
+| Package | What it is |
+|---|---|
+| `contract/` | The Compact contract: vendored OpenZeppelin modules (`access/Ownable`, `shielded-token/NativeShieldedToken*`, `utils/Utils`) composed in `modular.compact`, TypeScript witnesses, off-chain owner-commitment helper, simulator unit tests. |
+| `node/` | Node-side SDK: wallet building (`@midnightntwrk/wallet-sdk`), providers, deploy scripts per network, docker configs, end-to-end integration tests. |
+| `web/` | React frontend: the passkey embedded wallet, owner handshake, and mint/burn UI. See [`web/README.md`](web/README.md). |
+
+## The contract
+
+`contract/src/modular.compact` composes two vendored OpenZeppelin Compact modules (v0.3.0-alpha.1, MIT) behind an authored gate:
+
+- **`Ownable`** — witness-derived identity: owner = `persistentHash(wit_OwnableSK())`. State: `Ownable__owner`, `Ownable__isInitialized`.
+- **`NativeShieldedToken`** — single native shielded token; domain separator sealed at construction; MKT metadata (`MintKey Token`, `MKT`, 6 decimals).
+
+Exported circuits (all four require a ZK proof):
+
+| Circuit | Gate | Purpose |
+|---|---|---|
+| `mint(recipient, amount, nonce)` | owner | Create MKT into a shielded coin (recipient-private). |
+| `burn(coin, amount, refundTo)` | owner | Destroy MKT paid in by the caller's wallet. |
+| `transferOwnership(newCommitment)` | owner | Rotate the authority to a new passkey's commitment. |
+| `tokenColor()` | — | On-chain oracle for the off-chain color derivation (used by tests). |
+
+The composition, the gating, and the passkey→commitment identity flow are authored for MintKey; the privacy building blocks underneath are OZ's. The commitment is computed off-chain by `contract/src/owner.ts` and a unit test asserts it never drifts from the circuit's derivation.
+
+## Security & privacy notes
+
+- **Mint and burn are owner-gated** through `Ownable_assertOnlyOwner()`. This also closes the pre-mint nonce front-running liveness attack that exists for ungated mints.
+- The owner secret is **re-derived from the passkey on every connect** and held in memory only. Losing the passkey = losing mint authority (use `transferOwnership` to rotate to a new passkey *before* losing the old one). The wallet seed can be revealed for backup from the Wallet page.
+- Mint `amount` is a **public input** (protocol requirement); recipient and nonce stay private inside the coin commitment. Burn publishes no arguments.
+- Mint nonces are 32 bytes of CSPRNG output; the coin info returned by mint is the recipient's **only copy** (wallets can't discover contract-minted coins by scanning — the submitting wallet is the execution-verified exception). The app keeps a localStorage record; the nonce is stored in plaintext there, which can de-anonymize the mint recipient if read — encrypt at rest before real use.
+- Recipients are restricted to user keys (`ZswapCoinPublicKey`): the contract can never hold coins, so no value can be stranded in it.
+- The same secret produces the same commitment across contracts (OZ Ownable's deliberate `msg.sender` analogue). MintKey derives the secret with an app-specific HKDF info tag, so its identity is already domain-separated from other apps.
 
 ## Tests
 
 ```bash
-pnpm --filter @eddalabs/contract test      # simulator unit tests (counter + shielded token)
-pnpm --filter @eddalabs/node test-undeployed  # real transactions vs docker: deploy, increment, mint, burn
+pnpm -C contract test        # simulator unit tests: token behavior, owner gating,
+                             # commitment no-drift, ownership transfer (fast, no docker)
+pnpm -C node test-undeployed # full E2E on docker: deploy with commitment → owner mints →
+                             # wallet sees shielded balance → burn → non-owner mint rejected
 ```
 
-The node tests use the same docker services as `deploy-standalone` — run `pnpm standalone-down` first if a stack is up.
+The node tests share the `standalone.yml` docker services with `deploy-standalone` — run `pnpm standalone-down` first, and only one test/deploy process at a time.
+
+## What MintKey does that midnight-starter-template does not
+
+MintKey is a standalone dApp, not a scaffold: one flow a user actually uses (issue and manage a private token with a passkey), with its own identity. Concretely, beyond the starter template:
+
+1. **The passkey is the on-chain authority.** WebAuthn PRF → HKDF yields *two* domain-separated secrets: the wallet seed *and* an Ownable owner secret whose hash is stored at deploy. No extension wallet offers this — the browser credential itself is the contract-level identity.
+2. **Authored privacy work.** Mint and burn are gated by `Ownable_assertOnlyOwner()` — a witness-backed ZK ownership proof — composed and wired by this project (contract, witnesses, node API, deploy handshake, and UI), not inherited from OZ's ungated token module.
+3. **A deploy handshake designed around the secret never moving.** The browser shows only the commitment; the deploy script takes the hash and can't mint; the first mint necessarily happens from the owner's browser.
+4. **No demo scaffolding.** The counter module and its UI are gone; every page serves the token flow.
 
 ## Adding a module
 
-1. Create `contract/src/modules/<feature>/<Feature>.compact` (a `module` with its own ledger state and circuits).
-2. Import it in `modular.compact` with a prefix, re-export its ledger state, and wrap the circuits you want public.
-3. Recompile (`pnpm compact`), extend the simulator + tests, add node API functions, and surface it in `web/src/modules/midnight/modular-sdk`.
+The contract keeps the modular pattern, so extending it is mechanical:
+
+1. Create `contract/src/modules/<feature>/<Feature>.compact` (a `module` with its own state and circuits; track initialization per-module — see the LFDT-Minokawa/compact#270 note in `modular.compact`).
+2. Import it in `modular.compact` with a prefix, re-export its ledger state, and wrap the circuits you want public (gate them with `Ownable_assertOnlyOwner()` where appropriate).
+3. `pnpm compact`, check `contract-info.json` for ledger collisions, extend the simulator and tests, add node API functions, and surface it in `web/src/modules/midnight/modular-sdk`.
+
+## License
+
+Apache-2.0. Vendored OpenZeppelin Compact modules are MIT (headers preserved).
+
+---
+
+Built by [Edda Labs](https://eddalabs.io)

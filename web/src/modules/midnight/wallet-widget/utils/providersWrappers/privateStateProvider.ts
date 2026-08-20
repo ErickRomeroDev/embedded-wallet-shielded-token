@@ -5,6 +5,7 @@ import type { Logger } from "pino";
 
 export class WrappedPrivateStateProvider<
   PSI extends types.PrivateStateId = types.PrivateStateId,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   PS = any,
 > implements types.PrivateStateProvider<PSI, PS> {
   constructor(

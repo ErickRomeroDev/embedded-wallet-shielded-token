@@ -79,14 +79,16 @@ export const Tokens = () => {
   }, [deployedContractAPI]);
 
   const decimals = derivedState?.tokenDecimals ?? 6n;
-  const symbol = derivedState?.tokenSymbol || "EDDA";
-  const canAct = !!deployedContractAPI && !txProgress.isProcessing;
+  const symbol = derivedState?.tokenSymbol || "MKT";
+  const isOwner = derivedState?.isOwner ?? false;
+  const myCommitmentHex = deployedContractAPI?.myCommitmentHex ?? null;
+  const canAct = !!deployedContractAPI && !txProgress.isProcessing && isOwner;
 
   // The wallet's shielded balance for this token's color. Balances are a
   // snapshot updated on connect/refresh, so refresh after a tx (and offer a
   // manual button) to keep it current.
   const tokenColor = deployedContractAPI?.tokenColor;
-  const eddaBalance = tokenColor ? (shieldedBalances?.[tokenColor] ?? 0n) : 0n;
+  const tokenBalance = tokenColor ? (shieldedBalances?.[tokenColor] ?? 0n) : 0n;
 
   const refreshBalance = async () => {
     setRefreshingBalance(true);
@@ -142,10 +144,10 @@ export const Tokens = () => {
       <div className="max-w-3xl mx-auto">
         <div className="mb-8">
           <h1 className="text-2xl font-bold tracking-tight text-foreground mb-1">
-            Tokens
+            Mint
           </h1>
           <p className="text-muted-foreground">
-            Mint and burn {symbol}, the shielded token module of the deployed modular contract
+            Mint and burn {symbol}, a native shielded token whose authority is your passkey
           </p>
         </div>
 
@@ -160,6 +162,60 @@ export const Tokens = () => {
           onDismiss={txProgress.reset}
         />
 
+        {/* Owner status */}
+        <Card className="mb-6 border-border/60">
+          <CardHeader>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="text-base">Token authority</CardTitle>
+              {deployedContractAPI && (
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+                    isOwner
+                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {isOwner ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                  {isOwner ? "You are the token authority" : "Read-only"}
+                </span>
+              )}
+            </div>
+            <CardDescription>
+              Mint and burn require a ZK proof that your passkey-derived secret hashes to the
+              on-chain owner commitment. The secret never leaves this browser.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Your owner commitment</p>
+              {myCommitmentHex ? (
+                <CopyHash value={myCommitmentHex} label="your owner commitment" />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Connect the Passkey Wallet to derive your commitment — extension wallets are read-only here.
+                </p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">On-chain owner commitment</p>
+              {derivedState?.ownerCommitmentHex ? (
+                <CopyHash value={derivedState.ownerCommitmentHex} label="on-chain owner commitment" />
+              ) : (
+                <p className="text-sm text-muted-foreground">Not connected</p>
+              )}
+            </div>
+            {deployedContractAPI && !isOwner && (
+              <div className="flex items-start gap-3 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                <p className="text-sm text-amber-700 dark:text-amber-400">
+                  This contract's mint and burn are reserved for the passkey whose commitment was set
+                  at deploy. You can still view token state and hold {symbol}.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Your balance */}
         <Card className="mb-6 border-border/60">
           <CardContent className="pt-5 pb-5">
@@ -173,7 +229,7 @@ export const Tokens = () => {
                     Your {symbol} balance
                   </p>
                   <p className="text-2xl font-semibold tabular-nums">
-                    {deployedContractAPI ? formatUnits(eddaBalance, decimals) : "—"}
+                    {deployedContractAPI ? formatUnits(tokenBalance, decimals) : "—"}
                     <span className="ml-1.5 text-sm font-normal text-muted-foreground">{symbol}</span>
                   </p>
                 </div>
@@ -198,8 +254,8 @@ export const Tokens = () => {
             <CardTitle className="text-base">Actions</CardTitle>
             <CardDescription>
               Mint {symbol} to your wallet, or burn {symbol} your wallet holds.
-              Mint and burn are open to anyone — this is a starter template, not
-              a production token.
+              Both are owner-gated: only the deploying passkey can create or
+              destroy supply.
             </CardDescription>
           </CardHeader>
           <CardContent>

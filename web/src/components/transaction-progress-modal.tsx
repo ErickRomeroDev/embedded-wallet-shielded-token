@@ -180,12 +180,13 @@ export function TransactionProgressModal({
 
           {!isTerminal && stalled && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300 space-y-1">
-              <p className="font-semibold">Taking longer than usual.</p>
+              <p className="font-semibold">Still working — this can be normal.</p>
               <p>
-                The {stage} step has been active for over 90 seconds. Common causes: proof server
-                offline (check your local stack), Lace wallet prompt hidden behind another window,
-                or network issues reaching the Midnight node. The transaction is still in flight —
-                you can keep waiting, or close the tab after confirming nothing landed on chain.
+                The {stage} step has been active for over 90 seconds. Burn proofs are the heaviest
+                in this contract and can take several minutes, so long proving is expected. Other
+                causes: proof server offline (check your local stack), a hidden wallet prompt, or
+                network issues reaching the Midnight node. The transaction is still in flight —
+                keep waiting; do not retry, or you may submit it twice.
               </p>
             </div>
           )}

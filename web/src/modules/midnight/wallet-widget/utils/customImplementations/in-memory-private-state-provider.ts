@@ -22,6 +22,7 @@ export const inMemoryPrivateStateProvider = <
      * Sets the current contract address context.
      * @param {ContractAddress} _contractAddress - The contract address to set.
      */
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     setContractAddress(_contractAddress: ContractAddress): void {
       // No-op for in-memory provider; contract address scoping is not needed.
     },

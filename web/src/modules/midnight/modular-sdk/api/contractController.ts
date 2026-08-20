@@ -12,13 +12,21 @@ import {
   type EncodedCoinInfo,
   type MintedCoin,
 } from './common-types';
-import { Modular, ModularPrivateState, createPrivateState, TOKEN_DOMAIN } from '@eddalabs/contract';
+import {
+  Modular,
+  ModularPrivateState,
+  createPrivateState,
+  emptyPrivateState,
+  computeOwnerCommitment,
+  witnesses,
+  TOKEN_DOMAIN,
+} from '@eddalabs/contract';
 import { coinPublicKeyToHex } from '@/lib/coin-public-key';
-import { contracts, types } from '@midnight-ntwrk/midnight-js';
+import { contracts } from '@midnight-ntwrk/midnight-js';
 import { CompiledContract } from '@midnight-ntwrk/compact-js';
 
 const modularCompiledContract = CompiledContract.make('modular', Modular.Contract).pipe(
-  CompiledContract.withVacantWitnesses,
+  CompiledContract.withWitnesses(witnesses),
   CompiledContract.withCompiledFileAssets(`${window.location.origin}/midnight/modular`),
 );
 
@@ -32,9 +40,10 @@ export interface TxResult {
 export interface ContractControllerInterface {
   readonly deployedContractAddress: ContractAddress;
   readonly state$: Rx.Observable<DerivedState>;
-  /** The EDDA token color (raw hex): tokenType(domain, contractAddress). */
+  /** The MKT token color (raw hex): tokenType(domain, contractAddress). */
   readonly tokenColor: string;
-  increment: () => Promise<TxResult>;
+  /** This session's owner commitment (hex), or null without a passkey session. */
+  readonly myCommitmentHex: string | null;
   mint: (amount: bigint) => Promise<TxResult>;
   burn: (amount: bigint) => Promise<TxResult>;
   getMintedCoins: () => MintedCoin[];
@@ -46,28 +55,32 @@ export class ContractController implements ContractControllerInterface {
   readonly privateStates$: Rx.Subject<ModularPrivateState>;
   readonly turns$: Rx.Subject<UserAction>;
   readonly tokenColor: string;
+  readonly myCommitmentHex: string | null;
 
   private constructor(
     public readonly contractPrivateStateId: typeof ModularPrivateStateId,
     public readonly deployedContract: DeployedModularContract,
     public readonly providers: ModularProviders,
     private readonly logger: Logger,
+    myCommitmentHex: string | null,
   ) {
     const combine = (_acc: DerivedState, value: DerivedState): DerivedState => {
       return {
-        round: value.round,
         privateState: value.privateState,
         turns: value.turns,
         tokenName: value.tokenName,
         tokenSymbol: value.tokenSymbol,
         tokenDecimals: value.tokenDecimals,
         tokenDomain: value.tokenDomain,
+        ownerCommitmentHex: value.ownerCommitmentHex,
+        isOwner: value.isOwner,
       };
     };
     this.deployedContractAddress = deployedContract.deployTxData.public.contractAddress;
     // Off-chain color derivation; execution-verified against the tokenColor
     // circuit in the contract test suite — no transaction needed for reads.
     this.tokenColor = rawTokenType(TOKEN_DOMAIN, this.deployedContractAddress);
+    this.myCommitmentHex = myCommitmentHex;
     this.turns$ = new Rx.Subject<UserAction>();
     this.privateStates$ = new Rx.Subject<ModularPrivateState>();
     this.state$ = Rx.combineLatest(
@@ -81,17 +94,21 @@ export class ContractController implements ContractControllerInterface {
           ),
           this.privateStates$,
         ),
-        Rx.concat(Rx.of<UserAction>({ increment: undefined, mint: undefined, burn: undefined }), this.turns$),
+        Rx.concat(Rx.of<UserAction>({ mint: undefined, burn: undefined }), this.turns$),
       ],
       (ledgerState, privateState, userActions) => {
+        const ownerCommitmentHex = ledgerState.Ownable__owner.is_left
+          ? toHex(ledgerState.Ownable__owner.left)
+          : null;
         const result: DerivedState = {
-          round: ledgerState.Counter__round,
           privateState: privateState,
           turns: userActions,
           tokenName: ledgerState.ShieldedToken__name,
           tokenSymbol: ledgerState.ShieldedToken__symbol,
           tokenDecimals: ledgerState.ShieldedToken__decimals,
           tokenDomain: ledgerState.ShieldedToken__domain,
+          ownerCommitmentHex,
+          isOwner: this.myCommitmentHex !== null && this.myCommitmentHex === ownerCommitmentHex,
         };
         return result;
       },
@@ -104,37 +121,18 @@ export class ContractController implements ContractControllerInterface {
     );
   }
 
-  async increment(): Promise<TxResult> {
-    this.logger?.info('incrementing counter');
-    this.turns$.next({ increment: 'incrementing the counter', mint: undefined, burn: undefined });
-
-    try {
-      const txData = await this.deployedContract.callTx.increment();
-      this.logger?.trace({
-        increment: {
-          message: 'incrementing the counter - blockchain info',
-          txHash: txData.public.txHash,
-          blockHeight: txData.public.blockHeight,
-        },
-      });
-      this.turns$.next({ increment: undefined, mint: undefined, burn: undefined });
-      return { txHash: txData.public.txHash };
-    } catch (e) {
-      this.turns$.next({ increment: undefined, mint: undefined, burn: undefined });
-      throw e;
-    }
-  }
-
   /**
-   * Mints `amount` base units of EDDA to the connected wallet's own coin
+   * Mints `amount` base units of MKT to the connected wallet's own coin
    * public key, with a fresh secret random nonce (recipient-private mint).
+   * Owner-gated: proving succeeds only when the session's passkey-derived
+   * secret hashes to the on-chain owner commitment.
    * The submitting wallet detects its own contract-minted coin by syncing
    * (execution-verified in the node test suite); the returned coin info is
    * additionally persisted to localStorage as the out-of-band record.
    */
   async mint(amount: bigint): Promise<TxResult> {
     this.logger?.info(`minting ${amount} token base units`);
-    this.turns$.next({ increment: undefined, mint: 'minting tokens', burn: undefined });
+    this.turns$.next({ mint: 'minting tokens', burn: undefined });
 
     try {
       const recipient = this.ownRecipient();
@@ -149,24 +147,25 @@ export class ContractController implements ContractControllerInterface {
           blockHeight: txData.public.blockHeight,
         },
       });
-      this.turns$.next({ increment: undefined, mint: undefined, burn: undefined });
+      this.turns$.next({ mint: undefined, burn: undefined });
       return { txHash: txData.public.txHash };
     } catch (e) {
-      this.turns$.next({ increment: undefined, mint: undefined, burn: undefined });
+      this.turns$.next({ mint: undefined, burn: undefined });
       throw e;
     }
   }
 
   /**
-   * Burns exactly `amount` base units of EDDA. A fresh coin of value `amount`
-   * is paid into the transaction by the wallet during balancing (verified in
-   * the node test suite), so the full-burn path always runs and no change coin
-   * comes back to the user. `refundTo` is required to be non-zero by the
-   * contract, so we pass our own key; it stays inert on a full burn.
+   * Burns exactly `amount` base units of MKT (owner-gated, like mint). A fresh
+   * coin of value `amount` is paid into the transaction by the wallet during
+   * balancing (verified in the node test suite), so the full-burn path always
+   * runs and no change coin comes back to the user. `refundTo` is required to
+   * be non-zero by the contract, so we pass our own key; it stays inert on a
+   * full burn.
    */
   async burn(amount: bigint): Promise<TxResult> {
     this.logger?.info(`burning ${amount} token base units`);
-    this.turns$.next({ increment: undefined, mint: undefined, burn: 'burning tokens' });
+    this.turns$.next({ mint: undefined, burn: 'burning tokens' });
 
     try {
       const coin: EncodedCoinInfo = {
@@ -188,10 +187,10 @@ export class ContractController implements ContractControllerInterface {
           blockHeight: txData.public.blockHeight,
         },
       });
-      this.turns$.next({ increment: undefined, mint: undefined, burn: undefined });
+      this.turns$.next({ mint: undefined, burn: undefined });
       return { txHash: txData.public.txHash };
     } catch (e) {
-      this.turns$.next({ increment: undefined, mint: undefined, burn: undefined });
+      this.turns$.next({ mint: undefined, burn: undefined });
       throw e;
     }
   }
@@ -237,25 +236,39 @@ export class ContractController implements ContractControllerInterface {
     }
   }
 
+  /**
+   * Joins the deployed contract. When `ownerSecretKey` is provided (embedded
+   * passkey session) it becomes the private state backing wit_OwnableSK, so
+   * owner-gated circuits can prove ownership; otherwise the zero secret is
+   * used and mint/burn will be rejected by the contract.
+   */
   static async join(
     contractPrivateStateId: typeof ModularPrivateStateId,
     providers: ModularProviders,
     contractAddress: ContractAddress,
     logger: Logger,
+    ownerSecretKey?: Uint8Array | null,
   ): Promise<ContractController> {
     logger.info({
       joinContract: {
         action: "Joining contract",
         contractPrivateStateId,
         contractAddress,
+        withOwnerSecret: !!ownerSecretKey,
       },
     });
+
+    const privateState = ownerSecretKey ? createPrivateState(ownerSecretKey) : emptyPrivateState();
+    // Overwrite any previously stored private state: the secret is
+    // re-derivable from the passkey on every connect, and a stale zero secret
+    // must not shadow a live owner session (or vice versa).
+    await providers.privateStateProvider.set(contractPrivateStateId, privateState);
 
     const deployedContract = await contracts.findDeployedContract(providers, {
       contractAddress,
       compiledContract: modularCompiledContract,
       privateStateId: contractPrivateStateId,
-      initialPrivateState: await ContractController.getPrivateState(contractPrivateStateId, providers.privateStateProvider),
+      initialPrivateState: privateState,
     });
 
     logger.trace({
@@ -266,32 +279,7 @@ export class ContractController implements ContractControllerInterface {
       },
     });
 
-    return new ContractController(contractPrivateStateId, deployedContract, providers, logger);
-  }
-
-  private static async getPrivateState(
-    modularPrivateStateId: typeof ModularPrivateStateId,
-    privateStateProvider: types.PrivateStateProvider<typeof ModularPrivateStateId, ModularPrivateState>,
-  ): Promise<ModularPrivateState> {
-    const existingPrivateState = await privateStateProvider.get(modularPrivateStateId);
-    const initialState = await this.getOrCreateInitialPrivateState(modularPrivateStateId, privateStateProvider);
-    return existingPrivateState ?? initialState;
-  }
-
-  static async getOrCreateInitialPrivateState(
-    modularPrivateStateId: typeof ModularPrivateStateId,
-    privateStateProvider: types.PrivateStateProvider<typeof ModularPrivateStateId, ModularPrivateState>,
-  ): Promise<ModularPrivateState> {
-    let state = await privateStateProvider.get(modularPrivateStateId);
-
-    if (state === null) {
-      state = this.createPrivateState(0);
-      await privateStateProvider.set(modularPrivateStateId, state);
-    }
-    return state;
-  }
-
-  private static createPrivateState(value: number): ModularPrivateState {
-    return createPrivateState(value);
+    const myCommitmentHex = ownerSecretKey ? toHex(computeOwnerCommitment(ownerSecretKey)) : null;
+    return new ContractController(contractPrivateStateId, deployedContract, providers, logger, myCommitmentHex);
   }
 }

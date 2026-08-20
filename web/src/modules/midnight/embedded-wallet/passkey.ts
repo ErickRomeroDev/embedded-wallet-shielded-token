@@ -13,9 +13,9 @@
 // Lifted from the passport foundations demo with the domain tags and RP name
 // changed for this app.
 
-const PRF_SALT = new TextEncoder().encode("modular-starter:prf:seed:v0");
+const PRF_SALT = new TextEncoder().encode("mintkey:prf:seed:v0");
 
-const RP_NAME = "Modular Starter";
+const RP_NAME = "MintKey";
 
 export interface PasskeyRef {
   credentialIdB64: string;
@@ -54,7 +54,7 @@ function b64decode(s: string): Uint8Array<ArrayBuffer> {
 }
 
 async function userIdForLabel(label: string): Promise<ArrayBuffer> {
-  const data = new TextEncoder().encode(`modular-starter:user:v0:${label}`);
+  const data = new TextEncoder().encode(`mintkey:user:v0:${label}`);
   return crypto.subtle.digest("SHA-256", data);
 }
 

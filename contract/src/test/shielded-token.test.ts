@@ -6,10 +6,10 @@ import {
   TOKEN_DOMAIN,
   TOKEN_NAME,
   TOKEN_SYMBOL,
-  TOKEN_DECIMALS,
+  TOKEN_DECIMALS
 } from "../token-metadata.js";
 
-const key1 = 0;
+const ownerSecret = utils.randomBytes(32);
 
 const AMOUNT = 1_000n;
 
@@ -17,7 +17,7 @@ const RECIPIENT = utils.coinKey(utils.randomBytes(32));
 const REFUND_TO = utils.coinKey(utils.randomBytes(32));
 
 function createSimulator() {
-  return ModularSimulator.deployContract(key1);
+  return ModularSimulator.deployContract(ownerSecret);
 }
 
 describe("Shielded token module", () => {
@@ -41,7 +41,7 @@ describe("Shielded token module", () => {
       expect(simulator.tokenColor()).toEqual(color);
       // Off-chain derivation used by node and web must agree with the circuit.
       expect(toHex(color)).toEqual(
-        rawTokenType(TOKEN_DOMAIN, simulator.contractAddress),
+        rawTokenType(TOKEN_DOMAIN, simulator.contractAddress)
       );
     });
   });
@@ -59,14 +59,14 @@ describe("Shielded token module", () => {
     it("reverts on a zero recipient key", () => {
       const simulator = createSimulator();
       expect(() =>
-        simulator.as("p1").mint(utils.zeroKey(), AMOUNT, utils.randomBytes(32)),
+        simulator.as("p1").mint(utils.zeroKey(), AMOUNT, utils.randomBytes(32))
       ).toThrow("NativeShieldedToken: invalid recipient");
     });
 
     it("reverts on a zero amount", () => {
       const simulator = createSimulator();
       expect(() =>
-        simulator.as("p1").mint(RECIPIENT, 0n, utils.randomBytes(32)),
+        simulator.as("p1").mint(RECIPIENT, 0n, utils.randomBytes(32))
       ).toThrow("modular: zero mint");
     });
   });
@@ -75,7 +75,7 @@ describe("Shielded token module", () => {
     const coinOf = (value: bigint, color: Uint8Array) => ({
       nonce: utils.randomBytes(32),
       color,
-      value,
+      value
     });
 
     it("reverts on a wrong-color coin", () => {
@@ -83,7 +83,7 @@ describe("Shielded token module", () => {
       expect(() =>
         simulator
           .as("p1")
-          .burn(coinOf(AMOUNT, utils.randomBytes(32)), AMOUNT, REFUND_TO),
+          .burn(coinOf(AMOUNT, utils.randomBytes(32)), AMOUNT, REFUND_TO)
       ).toThrow("NativeShieldedToken: wrong token");
     });
 
@@ -91,7 +91,7 @@ describe("Shielded token module", () => {
       const simulator = createSimulator();
       const color = simulator.as("p1").tokenColor();
       expect(() =>
-        simulator.burn(coinOf(AMOUNT, color), AMOUNT + 1n, REFUND_TO),
+        simulator.burn(coinOf(AMOUNT, color), AMOUNT + 1n, REFUND_TO)
       ).toThrow("NativeShieldedToken: insufficient coin value");
     });
 
@@ -99,14 +99,18 @@ describe("Shielded token module", () => {
       const simulator = createSimulator();
       const color = simulator.as("p1").tokenColor();
       expect(() =>
-        simulator.burn(coinOf(AMOUNT, color), 1n, utils.zeroKey()),
+        simulator.burn(coinOf(AMOUNT, color), 1n, utils.zeroKey())
       ).toThrow("NativeShieldedToken: invalid refund target");
     });
 
     it("returns none on a full burn (amount == coin.value)", () => {
       const simulator = createSimulator();
       const color = simulator.as("p1").tokenColor();
-      const { change } = simulator.burn(coinOf(AMOUNT, color), AMOUNT, REFUND_TO);
+      const { change } = simulator.burn(
+        coinOf(AMOUNT, color),
+        AMOUNT,
+        REFUND_TO
+      );
       expect(change.is_some).toBe(false);
     });
 
@@ -116,15 +120,6 @@ describe("Shielded token module", () => {
       const { change } = simulator.burn(coinOf(AMOUNT, color), 600n, REFUND_TO);
       expect(change.is_some).toBe(true);
       expect(change.value.value).toBe(AMOUNT - 600n);
-    });
-  });
-
-  describe("counter coexistence", () => {
-    it("increment still works alongside token operations", () => {
-      const simulator = createSimulator();
-      simulator.as("p1").mint(RECIPIENT, AMOUNT, utils.randomBytes(32));
-      const ledgerState = simulator.increment();
-      expect(ledgerState.Counter__round).toEqual(1n);
     });
   });
 });

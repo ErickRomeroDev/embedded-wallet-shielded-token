@@ -1,7 +1,7 @@
 import { Link, useRouterState } from '@tanstack/react-router';
 import { ReactNode } from 'react';
 import { ModeToggle } from '@/components/mode-toggle';
-import { Home, Hash, Wallet, Coins } from 'lucide-react';
+import { Home, Wallet, Coins } from 'lucide-react';
 import { MidnightWallet } from '@/modules/midnight/wallet-widget/ui/midnightWallet';
 
 interface MainLayoutProps {
@@ -10,8 +10,7 @@ interface MainLayoutProps {
 
 const navItems = [
   { to: '/', label: 'Home', icon: Home },
-  { to: '/counter', label: 'Counter', icon: Hash },
-  { to: '/tokens', label: 'Tokens', icon: Coins },
+  { to: '/tokens', label: 'Mint', icon: Coins },
   { to: '/wallet-ui', label: 'Wallet', icon: Wallet },
 ] as const;
 
@@ -23,17 +22,11 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
     <div className="min-h-screen flex flex-col bg-background">
       <header className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur-lg">
         <div className="container mx-auto flex items-center justify-between h-16 px-4 sm:px-6">
-          <Link to="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <img
-              src="/transparent-logo-white.svg"
-              alt="Edda Labs"
-              className="h-5 hidden dark:block"
-            />
-            <img
-              src="/transparent-logo-black.svg"
-              alt="Edda Labs"
-              className="h-5 dark:hidden block"
-            />
+          <Link to="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-primary text-primary-foreground">
+              <Coins className="h-4 w-4" />
+            </span>
+            <span className="text-base font-semibold tracking-tight text-foreground">MintKey</span>
           </Link>
 
           <nav className="flex items-center gap-1">
@@ -60,7 +53,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
 
           <div className="flex items-center gap-2">
             <a
-              href="https://github.com/eddalabs/modular-starter"
+              href="https://github.com/ErickRomeroDev/embedded-wallet-shielded-token"
               target="_blank"
               rel="noopener noreferrer"
               aria-label="GitHub repository"

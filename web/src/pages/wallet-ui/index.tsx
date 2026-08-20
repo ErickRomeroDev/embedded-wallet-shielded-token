@@ -65,12 +65,12 @@ export function WalletUI() {
     shieldedBalances,
   } = useWallet();
 
-  // Best-effort labelling of the app's shielded token (EDDA) among the wallet's
+  // Best-effort labelling of the app's shielded token (MKT) among the wallet's
   // shielded balances; other colors fall back to a raw display.
   const { deployedContractAPI, derivedState } = useContractSubscription();
-  const eddaColor = deployedContractAPI?.tokenColor;
-  const eddaSymbol = derivedState?.tokenSymbol || "EDDA";
-  const eddaDecimals = derivedState?.tokenDecimals ?? 6n;
+  const mktColor = deployedContractAPI?.tokenColor;
+  const mktSymbol = derivedState?.tokenSymbol || "MKT";
+  const mktDecimals = derivedState?.tokenDecimals ?? 6n;
 
   const shieldedEntries = Object.entries(shieldedBalances ?? {});
 
@@ -217,17 +217,17 @@ export function WalletUI() {
                   ) : (
                     <div className="space-y-2">
                       {shieldedEntries.map(([color, balance]) => {
-                        const isEdda = eddaColor === color;
+                        const isMkt = mktColor === color;
                         return (
                           <div
                             key={color}
                             className="flex items-center justify-between gap-3 bg-muted/50 border border-border/60 rounded-lg px-4 py-3"
                           >
                             <span className="text-sm font-medium">
-                              {isEdda ? eddaSymbol : <span className="font-mono text-xs">{shortColor(color)}</span>}
+                              {isMkt ? mktSymbol : <span className="font-mono text-xs">{shortColor(color)}</span>}
                             </span>
                             <span className="text-sm font-semibold tabular-nums">
-                              {isEdda ? formatUnits(balance, eddaDecimals) : balance.toString()}
+                              {isMkt ? formatUnits(balance, mktDecimals) : balance.toString()}
                             </span>
                           </div>
                         );

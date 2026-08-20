@@ -34,6 +34,13 @@ export default [
         Buffer: 'readonly',
         URL: 'readonly',
         setTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        crypto: 'readonly',
+        globalThis: 'readonly',
+        TextEncoder: 'readonly',
       },
     },
     plugins: {
@@ -42,6 +49,7 @@ export default [
     },
     rules: {
       'prettier/prettier': 'off',
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/no-misused-promises': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/promise-function-async': 'off',

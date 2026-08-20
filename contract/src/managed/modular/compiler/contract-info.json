@@ -4,18 +4,6 @@
   "runtime-version": "0.16.0",
   "circuits": [
     {
-      "name": "increment",
-      "pure": false,
-      "proof": true,
-      "arguments": [
-      ],
-      "result-type": {
-        "type-name": "Tuple",
-        "types": [
-        ]
-      }
-    },
-    {
       "name": "tokenColor",
       "pure": false,
       "proof": true,
@@ -191,22 +179,94 @@
           }
         ]
       }
+    },
+    {
+      "name": "transferOwnership",
+      "pure": false,
+      "proof": true,
+      "arguments": [
+        {
+          "name": "newOwnerCommitment",
+          "type": {
+            "type-name": "Bytes",
+            "length": 32
+          }
+        }
+      ],
+      "result-type": {
+        "type-name": "Tuple",
+        "types": [
+        ]
+      }
     }
   ],
   "witnesses": [
+    {
+      "name": "wit_OwnableSK",
+      "arguments": [
+      ],
+      "result type": {
+        "type-name": "Bytes",
+        "length": 32
+      }
+    }
   ],
   "contracts": [
   ],
   "ledger": [
     {
-      "name": "_round",
+      "name": "_isInitialized",
       "index": 0,
       "exported": true,
-      "storage": "Counter"
+      "storage": "Cell",
+      "type": {
+        "type-name": "Boolean"
+      }
+    },
+    {
+      "name": "_owner",
+      "index": 1,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Struct",
+        "name": "Either",
+        "elements": [
+          {
+            "name": "is_left",
+            "type": {
+              "type-name": "Boolean"
+            }
+          },
+          {
+            "name": "left",
+            "type": {
+              "type-name": "Bytes",
+              "length": 32
+            }
+          },
+          {
+            "name": "right",
+            "type": {
+              "type-name": "Struct",
+              "name": "ContractAddress",
+              "elements": [
+                {
+                  "name": "bytes",
+                  "type": {
+                    "type-name": "Bytes",
+                    "length": 32
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
     },
     {
       "name": "_domain",
-      "index": 1,
+      "index": 2,
       "exported": true,
       "storage": "Cell",
       "type": {
@@ -216,7 +276,7 @@
     },
     {
       "name": "_isInitialized",
-      "index": 2,
+      "index": 3,
       "exported": true,
       "storage": "Cell",
       "type": {
@@ -225,16 +285,6 @@
     },
     {
       "name": "_name",
-      "index": 3,
-      "exported": true,
-      "storage": "Cell",
-      "type": {
-        "type-name": "Opaque",
-        "tsType": "string"
-      }
-    },
-    {
-      "name": "_symbol",
       "index": 4,
       "exported": true,
       "storage": "Cell",
@@ -244,8 +294,18 @@
       }
     },
     {
-      "name": "_decimals",
+      "name": "_symbol",
       "index": 5,
+      "exported": true,
+      "storage": "Cell",
+      "type": {
+        "type-name": "Opaque",
+        "tsType": "string"
+      }
+    },
+    {
+      "name": "_decimals",
+      "index": 6,
       "exported": true,
       "storage": "Cell",
       "type": {

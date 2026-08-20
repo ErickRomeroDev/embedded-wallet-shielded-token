@@ -1,0 +1,17 @@
+{
+  "network": "undeployed",
+  "contractAddress": "78f1555eb27ba543a7512d51bcbad9d7c09af98660b3bb559feea6c1babc6780",
+  "contractName": "modular",
+  "deployedAt": "2026-08-20T11:04:08.917Z",
+  "endpoints": {
+    "node": "http://127.0.0.1:9944",
+    "indexer": "http://127.0.0.1:8088/api/v4/graphql",
+    "indexerWS": "ws://127.0.0.1:8088/api/v4/graphql/ws",
+    "proofServer": "http://127.0.0.1:6300"
+  },
+  "funding": {
+    "address": "mn_addr_undeployed1wfcukk8k9490pln2kv3vpj9z89ncnkkkwcf5vnqfvwxg7c6tz3jqa2u0ug",
+    "amount": "1000",
+    "txHash": "000c23983ab701fbf21fda5f38182ef92c4cdf3eeb2fab3002ce1a449c7feaf187"
+  }
+}

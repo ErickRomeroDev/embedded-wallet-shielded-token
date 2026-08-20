@@ -9,6 +9,7 @@ import {
   ContractController,
   ContractControllerInterface,
 } from "../api/contractController";
+import { getOwnerSecret } from "@/modules/midnight/embedded-wallet";
 
 export type ContractDeployment =  
   | InProgressContractDeployment
@@ -69,11 +70,14 @@ export class DeployedTemplateManager implements DeployedAPIProvider {
   ): Promise<void> {
     try {
       if (this.providers) {
+        // Embedded passkey sessions carry the owner secret (in memory only);
+        // extension-wallet sessions join read-only with the zero secret.
         const api = await ContractController.join(
           ModularPrivateStateId,
           this.providers,
           contractAddress,
-          this.logger
+          this.logger,
+          getOwnerSecret()
         );
 
         deployment.next({

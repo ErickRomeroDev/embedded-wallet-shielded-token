@@ -48,7 +48,7 @@ export const ProvidersContext = createContext<ProvidersState | undefined>(
 const ACTION_MESSAGES: Readonly<ActionMessages> = {
   proveTxStarted: "Proving transaction...",
   proveTxDone: undefined,
-  balanceTxStarted: "Signing the transaction with Midnight Lace wallet...",
+  balanceTxStarted: "Signing the transaction with your wallet...",
   balanceTxDone: undefined,
   downloadProverStarted: "Downloading prover key...",
   downloadProverDone: undefined,
