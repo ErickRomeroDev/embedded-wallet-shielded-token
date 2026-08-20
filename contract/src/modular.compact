@@ -1,0 +1,112 @@
+pragma language_version >= 0.23;
+
+import CompactStandardLibrary;
+
+// Module composition rules:
+//  * At most ONE module that imports NativeShieldedTokenCore may be imported.
+//    Core's ledger state (_isInitialized/_name/_symbol/_decimals) is SHARED
+//    across transitive importers (LFDT-Minokawa/compact#270), so adding
+//    NativeShieldedTokenFamily, NativeShieldedTokenPublicSupply, or
+//    NativeTokenConverter alongside NativeShieldedToken silently aliases it.
+//  * After adding a module, recompile and check contract-info.json's `ledger`
+//    array for field-name collisions.
+import "./modules/counter/Counter" prefix Counter_;
+import "./modules/shielded-token/NativeShieldedToken" prefix ShieldedToken_;
+
+///////////////////////////////////////////////////////////////////////////////
+// PUBLIC STATE FROM MODULES
+///////////////////////////////////////////////////////////////////////////////
+
+// _round is attacker-advanceable (increment is ungated). Do NOT derive nonces,
+// phase guards, or rotated keys from it without gating increment() first.
+export { Counter__round };
+export {
+  ShieldedToken__name,
+  ShieldedToken__symbol,
+  ShieldedToken__decimals,
+  ShieldedToken__isInitialized,
+  ShieldedToken__domain
+};
+
+///////////////////////////////////////////////////////////////////////////////
+// CONSTRUCTOR
+///////////////////////////////////////////////////////////////////////////////
+
+// Token metadata is fixed at deployment. `initialize` writes sealed ledger
+// fields, so it can only run here — never expose it as a circuit. Per the
+// module contract, initialize MUST be the only token operation performed in
+// the constructor (no pre-minting at deploy).
+constructor(
+  domainSep: Bytes<32>,
+  name_: Opaque<"string">,
+  symbol_: Opaque<"string">,
+  decimals_: Uint<8>
+) {
+  ShieldedToken_initialize(domainSep, name_, symbol_, decimals_);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// CIRCUITS
+///////////////////////////////////////////////////////////////////////////////
+
+export circuit increment(): [] {
+  return Counter_increment();
+}
+
+// Exposed as an on-chain oracle for the off-chain derivation
+// rawTokenType(domain, contractAddress); DApps read the color off-chain and
+// the unit tests cross-check the two — do not call this in a transaction.
+export circuit tokenColor(): Bytes<32> {
+  return ShieldedToken_tokenColor();
+}
+
+// Mint and burn are deliberately ungated: anyone can create or destroy EDDA.
+// Fine for a starter, never for production — gate these wrappers with an
+// access-control module (e.g. Ownable) before real use.
+//
+// Recipients are restricted to ZswapCoinPublicKey on purpose. This contract
+// exposes no receiveShielded/_burnFromSelf-backed circuit, so it can never
+// hold or move coins: a ContractAddress mint recipient or burn refund target
+// would strand that value irrecoverably. Only relax to
+// Either<ZswapCoinPublicKey, ContractAddress> together with a paired
+// receive/withdraw circuit and its own access gate.
+//
+// Privacy envelope (verified against zkir/mint.zkir and zkir/burn.zkir):
+//   mint — `amount` IS a public input (protocol requirement: value created
+//          ex nihilo must be publicly accounted). `recipient` and `nonce`
+//          stay private inside the coin commitment.
+//   burn — no argument is published as a public input.
+// If mint amounts must be private, mint fixed denominations instead.
+//
+// `nonce` MUST be 32 bytes of CSPRNG output, kept secret until the coin is
+// delivered. Two properties depend on it:
+//   * recipient privacy — a guessable nonce lets an observer brute-force the
+//     coin commitment and deanonymise the recipient;
+//   * liveness — because mint is ungated, anyone who can predict a nonce can
+//     pre-mint the same commitment and permanently block that mint. Gate mint
+//     BEFORE composing any derived-nonce extension (derived nonces are
+//     predictable).
+export circuit mint(
+  recipient: ZswapCoinPublicKey,
+  amount: Uint<64>,
+  nonce: Bytes<32>
+): ShieldedCoinInfo {
+  assert(amount > 0, "modular: zero mint");
+  return ShieldedToken__mint(
+    left<ZswapCoinPublicKey, ContractAddress>(recipient),
+    amount,
+    nonce
+  );
+}
+
+export circuit burn(
+  coin: ShieldedCoinInfo,
+  amount: Uint<128>,
+  refundTo: ZswapCoinPublicKey
+): Maybe<ShieldedCoinInfo> {
+  return ShieldedToken__burn(
+    coin,
+    amount,
+    left<ZswapCoinPublicKey, ContractAddress>(refundTo)
+  );
+}

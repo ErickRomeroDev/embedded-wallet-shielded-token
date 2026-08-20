@@ -1,0 +1,39 @@
+{
+  "name": "@eddalabs/node",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "test-undeployed": "vitest run counter.test.ts shielded-token.test.ts",
+    "test-preview": "RUN_ENV_TESTS=true TEST_ENV=preview vitest run counter.test.ts",
+    "test-preprod": "RUN_ENV_TESTS=true TEST_ENV=preprod vitest run counter.test.ts",
+    "deploy-standalone": "docker compose -f standalone.yml up -d --wait && tsx src/deploy/standalone.ts",
+    "deploy-preview": "docker compose -f proof-server.yml up -d && tsx src/deploy/preview.ts",
+    "deploy-preprod": "docker compose -f proof-server.yml up -d && tsx src/deploy/preprod.ts",
+    "standalone-down": "docker compose -f standalone.yml down",
+    "ps-all": "docker compose -f proof-server.yml up",
+    "build": "rm -rf dist && tsc --project tsconfig.build.json",
+    "lint": "eslint src",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@eddalabs/contract": "workspace:*"
+  },
+  "devDependencies": {
+    "long": "^5.3.2",
+    "protobufjs": "^8.7.2",
+    "tsx": "^4.23.11"
+  }
+}

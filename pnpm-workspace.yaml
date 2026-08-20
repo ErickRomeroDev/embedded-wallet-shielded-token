@@ -1,0 +1,8 @@
+packages:
+  - "node"
+  - "contract"
+  - "web"
+onlyBuiltDependencies:
+  - "@swc/core"
+  - classic-level
+  - esbuild

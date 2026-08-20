@@ -1,0 +1,28 @@
+{
+  "name": "@eddalabs/contract",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.cjs",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {},
+  "scripts": {
+    "compact": "compact compile +0.31.0 src/modular.compact src/managed/modular",
+    "test": "vitest run",
+    "test:compile": "pnpm compact && vitest run",
+    "build": "rm -rf dist && tsc --project tsconfig.build.json && cp -Rf ./src/managed ./dist/managed && cp ./src/modular.compact ./dist && cp -R ./src/modules ./dist",
+    "lint": "eslint src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "toolkit-version": "bash src/toolkit/version.sh"  
+  }
+}
