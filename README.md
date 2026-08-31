@@ -1,5 +1,7 @@
 # MintKey
 
+This project is built on the Midnight Network.
+
 **MintKey is a passkey-owned shielded token mint on the Midnight Network.** You create a WebAuthn passkey in your browser, and that passkey becomes the on-chain token authority: only you can mint and burn **MintKey Token (MKT)**, a native shielded (Zswap) token. Everything runs browser-native — the Midnight wallet itself is derived from the passkey (WebAuthn PRF → HKDF → wallet SDK in-browser), so there is **no extension dependency, no seed phrase to type, and no secret that ever leaves your device**.
 
 What the embedded wallet unlocks: a full shielded-token flow — sync, balance, transaction balancing, signing, submission — entirely inside the browser page. The current Lace shielded-spend issue makes this pattern especially useful *today* (extension users can't spend shielded coins), but that's context, not the reason MintKey exists: the passkey wallet is an identity and custody model of its own, and everything here stands unchanged once the extension issue is fixed.
