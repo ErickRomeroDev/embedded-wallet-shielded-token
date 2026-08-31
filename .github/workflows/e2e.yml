@@ -1,0 +1,88 @@
+name: E2E (standalone)
+
+# Runs the full docker E2E: deploy with an owner commitment, owner mints, the
+# wallet observes the shielded balance, burn, and a non-owner mint is rejected.
+#
+# It runs on BOTH architectures on purpose. `ubuntu-latest` is amd64 and only
+# reproduces the maintainer's own environment; the `ubuntu-24.04-arm` job is the
+# one that demonstrates the claim on hardware resembling an Apple Silicon
+# reviewer's. The compose file pins `platform: linux/amd64`, so the ARM job
+# needs binfmt/QEMU registered before it can run those images — that is what
+# setup-qemu-action does. Emulated proving is slow, hence the long timeout.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+            emulated: false
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            emulated: true
+    name: e2e (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Register QEMU for cross-arch images
+        if: matrix.emulated
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/amd64
+
+      # Version comes from the root package.json "packageManager" field.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # No Compact toolchain here: contract/src/managed is committed, and ci.yml
+      # proves it matches the source. Building the contract package only copies
+      # those artifacts plus tsc output, so the E2E starts fast.
+      - name: Build the contract package
+        run: pnpm -C contract build
+
+      - name: Pre-pull the standalone images
+        run: docker compose -f node/standalone.yml pull
+
+      - name: Run the standalone E2E
+        run: pnpm -C node test-undeployed
+
+      - name: Collect docker logs on failure
+        if: failure()
+        run: |
+          mkdir -p node/logs/docker
+          for c in modular-node modular-indexer modular-proof-server; do
+            docker logs "$c" > "node/logs/docker/$c.log" 2>&1 || true
+          done
+
+      # Artifact upload is observability, not a gate: a diagnostics hiccup
+      # must never turn a passing test run red (it did — upload-artifact
+      # rejects ':' in filenames, which our ISO log names used to contain).
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: e2e-${{ matrix.arch }}-reports
+          path: |
+            node/reports/
+            node/logs/
+          if-no-files-found: ignore
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f node/standalone.yml down -v || true

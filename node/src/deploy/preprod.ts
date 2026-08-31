@@ -2,7 +2,7 @@ import 'dotenv/config';
 import path from 'node:path';
 import * as api from '../api';
 import { currentDir, PreprodConfig } from '../config';
-import { createLogger } from '../logger';
+import { createLogger, logFileTimestamp } from '../logger';
 import { emptyPrivateState } from '@eddalabs/contract';
 import { type DeploymentRecord, writeDeploymentRecord } from './deployment-record';
 import { requireOwnerCommitment } from './owner-commitment';
@@ -14,7 +14,7 @@ import { requireOwnerCommitment } from './owner-commitment';
 
 async function main(): Promise<void> {
   const logger = await createLogger(
-    path.resolve(currentDir, '..', 'logs', 'deploy-preprod', `${new Date().toISOString()}.log`),
+    path.resolve(currentDir, '..', 'logs', 'deploy-preprod', `${logFileTimestamp()}.log`),
   );
   api.setLogger(logger);
 

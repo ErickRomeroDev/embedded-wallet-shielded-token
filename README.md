@@ -23,7 +23,7 @@ WebAuthn passkey ──PRF──▶ 32-byte secret
 ## Prerequisites
 
 - **Node.js ≥ 22** and **pnpm 10**
-- **Docker** (standalone network: `midnight-node` 0.22.2, `indexer-standalone` 4.0.1, `proof-server` 8.0.3)
+- **Docker** (standalone network: `midnight-node` 0.22.2, `indexer-standalone` 4.0.1, `proof-server` 8.0.3). All three services pin `platform: linux/amd64`, so every machine runs the binaries this stack is verified against. **On Apple Silicon these run under emulation** — everything works, but wallet sync and proving are slower; the waits are bounded and report a diagnostic rather than hanging.
 - **Compact developer tools** with **compiler 0.31.0** (`compact compile +0.31.0` is pinned in the contract package):
   ```bash
   curl --proto '=https' --tlsv1.2 -LsSf https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh | sh
@@ -32,7 +32,7 @@ WebAuthn passkey ──PRF──▶ 32-byte secret
 - **A PRF-capable passkey authenticator**: Touch ID / iCloud Keychain (macOS/iOS 18+), Google Password Manager passkeys (Android/ChromeOS), or a PRF-capable security key. Windows Hello does **not** support the PRF extension.
 - Chrome or another browser with WebAuthn PRF support; open the app at `http://localhost:5174/` (passkeys need a valid domain — bare IPs won't work).
 
-> **Preview / Preprod caveat:** deploying and minting on a public testnet needs a **faucet-funded wallet** ([preview faucet](https://faucet.preview.midnight.network/)), generated **tDUST** for fees (NIGHT must be registered for DUST generation — the app and deploy scripts do this automatically, but generation takes a few minutes), and the **local proof server** running (`docker compose -f node/proof-server.yml up -d`). First wallet sync on a public network can take several minutes. The end-to-end flow is execution-verified on standalone by the test suite; on preview/preprod expect the same flow with longer waits.
+> **Preview / Preprod caveat:** deploying and minting on a public testnet needs a **faucet-funded wallet** ([preview faucet](https://faucet.preview.midnight.network/)), generated **tDUST** for fees (NIGHT must be registered for DUST generation — the app and deploy scripts do this automatically, but generation takes a few minutes), and the **local proof server** running (`docker compose -f node/proof-server.yml up -d`). First wallet sync on a public network can take several minutes. The end-to-end flow is execution-verified on standalone by the `E2E (standalone)` workflow, which runs on both amd64 and arm64 runners; on preview/preprod expect the same flow with longer waits.
 
 ## Getting started
 
@@ -111,7 +111,15 @@ pnpm -C node test-undeployed # full E2E on docker: deploy with commitment → ow
                              # wallet sees shielded balance → burn → non-owner mint rejected
 ```
 
-The node tests share the `standalone.yml` docker services with `deploy-standalone` — run `pnpm standalone-down` first, and only one test/deploy process at a time.
+Both suites run in CI on every push (`CI` for lint/typecheck/unit tests, `E2E (standalone)` for the docker flow on amd64 **and** arm64 runners), so the standalone claim is demonstrated off the maintainer's machine.
+
+### Troubleshooting the standalone stack
+
+- **`deploy-standalone` and `test-undeployed` share the same fixed host ports (6300 / 8088 / 9944) and the same `modular-*` container names.** Run `pnpm standalone-down` before the tests, and only one test or deploy process at a time — a leftover stack shows up as a port or name collision, not a helpful error.
+- **Don't run `pnpm lint` or `pnpm build` while the E2E is running.** Both go through Turbo, whose tasks `dependsOn` `compact`, so they recompile `contract/src/managed/**` — overwriting the ZK keys the running test is reading. It surfaces as `ZKConfigurationReadError: Failed to read verifier key for modular#<circuit>`, which looks like a missing-artifact bug but is just a race. Run them before or after, not alongside.
+- **A freshly started stack needs a warm-up before it can transact.** Immediately after `docker compose up`, a deploy can fail with `Insufficient Funds: could not balance dust` even though the wallet reports a large DUST balance. Give the stack a few minutes before running the E2E, or let the tooling wait. A cold machine also pulls ~1.5 GB of images, and the proof server fetches PLONK parameters on first use. `burn` is the largest circuit here, so the first burn is the slowest operation in the suite.
+- **If a wait times out**, the message names the indexer URL and prints per-sub-wallet sync state. `connected=false` means the wallet cannot reach the indexer from your host (check the mapped port and your Docker context); connected but a stuck `applied` index means the indexer is not serving the wallet sync stream.
+- **Non-default Docker engines** (Colima, Rancher Desktop, OrbStack, a remote `DOCKER_HOST`) are supported — the test harness resolves the container host rather than assuming `127.0.0.1`.
 
 ## What MintKey does that midnight-starter-template does not
 

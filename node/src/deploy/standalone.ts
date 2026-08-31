@@ -3,7 +3,7 @@ import path from 'node:path';
 import * as api from '../api';
 import { emptyPrivateState } from '@eddalabs/contract';
 import { currentDir, UndeployedConfig } from '../config';
-import { createLogger } from '../logger';
+import { createLogger, logFileTimestamp } from '../logger';
 import { sendArbitraryUnshieldedToken } from '../test/utils/wallet-transfers';
 import { type DeploymentRecord, writeDeploymentRecord } from './deployment-record';
 import { requireOwnerCommitment } from './owner-commitment';
@@ -21,7 +21,7 @@ const FUND_AMOUNT = BigInt(process.env.FUND_AMOUNT ?? '1000');
 
 async function main(): Promise<void> {
   const logger = await createLogger(
-    path.resolve(currentDir, '..', 'logs', 'deploy-standalone', `${new Date().toISOString()}.log`),
+    path.resolve(currentDir, '..', 'logs', 'deploy-standalone', `${logFileTimestamp()}.log`),
   );
   api.setLogger(logger);
 

@@ -13,6 +13,13 @@ import type { Logger } from 'pino';
 
 const GENESIS_MINT_WALLET_SEED = '0000000000000000000000000000000000000000000000000000000000000001';
 
+// Keep in step with the proof-server image in standalone.yml / proof-server.yml.
+const PROOF_SERVER_IMAGE = 'midnightntwrk/proof-server:8.0.3';
+
+// A first-ever run pulls ~1.5 GB of images inside this window; the default 60s
+// is not enough on a clean machine or a slow link.
+const CONTAINER_STARTUP_TIMEOUT_MS = 10 * 60 * 1000;
+
 // Test mnemonic - DO NOT use in production
 const TEST_MNEMONIC = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 
@@ -122,12 +129,19 @@ export class TestEnvironment {
       this.logger.info('Test containers starting...');
       const composeFile = process.env.COMPOSE_FILE ?? 'standalone.yml';
       this.logger.info(`Using compose file: ${composeFile}`);
+      // Wait strategies: the node and indexer are gated on their compose
+      // healthchecks, which survive image bumps. The proof-server image is
+      // distroless (no shell for a healthcheck), so it keeps a log match — the
+      // one place a version bump can still require a string update.
+      // Cold runs pull ~1.5 GB, so the startup timeout is generous.
       this.dockerEnv = new DockerComposeEnvironment(path.resolve(currentDir, '..'), composeFile)
+        .withStartupTimeout(CONTAINER_STARTUP_TIMEOUT_MS)
         .withWaitStrategy(
           'modular-proof-server',
           Wait.forLogMessage('Actix runtime found; starting in Actix runtime', 1),
         )
-        .withWaitStrategy('modular-indexer', Wait.forLogMessage('starting indexing', 1));
+        .withWaitStrategy('modular-node', Wait.forHealthCheck())
+        .withWaitStrategy('modular-indexer', Wait.forHealthCheck());
       this.env = await this.dockerEnv.up();
 
       this.testConfig.dappConfig = {
@@ -147,21 +161,33 @@ export class TestEnvironment {
     return this.testConfig;
   };
 
+  /**
+   * Rewrites both the host AND the port of a config URL to what the container
+   * is actually reachable at.
+   *
+   * Rewriting only the port leaves the hardcoded 127.0.0.1 from config.ts in
+   * place, which is wrong for any non-local Docker engine (Colima, Rancher
+   * Desktop, OrbStack, a remote DOCKER_HOST). The wallet then dials a host
+   * nothing is listening on, never reports itself connected, and the run looks
+   * like an indefinite sync stall while `docker logs` shows a healthy chain.
+   */
   static mapContainerPort = (env: StartedDockerComposeEnvironment, url: string, containerName: string) => {
     const mappedUrl = new URL(url);
     const container = env.getContainer(containerName);
 
+    mappedUrl.hostname = container.getHost();
     mappedUrl.port = String(container.getFirstMappedPort());
 
     return mappedUrl.toString().replace(/\/+$/, '');
   };
 
   static getProofServerContainer = async (_env: string) =>
-    await new GenericContainer('midnightntwrk/proof-server:8.0.3')
+    await new GenericContainer(PROOF_SERVER_IMAGE)
       .withExposedPorts(6300)
       .withCommand(['midnight-proof-server -v'])
       .withEnvironment({ RUST_BACKTRACE: 'full' })
       .withWaitStrategy(Wait.forLogMessage('Actix runtime found; starting in Actix runtime', 1))
+      .withStartupTimeout(CONTAINER_STARTUP_TIMEOUT_MS)
       .start();
 
   shutdown = async () => {

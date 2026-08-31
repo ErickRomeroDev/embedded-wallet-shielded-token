@@ -1,0 +1,75 @@
+name: CI
+
+# Fast feedback: lint, typecheck, contract compile and simulator unit tests.
+# No docker, no chain — the E2E lives in e2e.yml so this stays quick.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-unit-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version comes from the root package.json "packageManager" field.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Compact toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            https://github.com/midnightntwrk/compact/releases/latest/download/compact-installer.sh | sh
+          echo "$HOME/.compact/bin" >> "$GITHUB_PATH"
+
+      - name: Pin the compiler version
+        run: compact update 0.31.0
+
+      - name: Compile the contract
+        run: pnpm compact
+
+      # The compiled artifacts under contract/src/managed are committed so that
+      # e2e.yml and a fresh clone can run without the toolchain. If a source
+      # change was committed without recompiling, they drift — and the E2E would
+      # silently exercise a stale circuit. Fail loudly instead.
+      - name: Verify committed artifacts match the source
+        run: |
+          if ! git diff --quiet -- contract/src/managed; then
+            echo "::error::contract/src/managed is out of date. Run 'pnpm compact' and commit the result."
+            git diff --stat -- contract/src/managed
+            exit 1
+          fi
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: |
+          pnpm -C contract typecheck
+          pnpm -C node typecheck
+
+      - name: Contract unit tests
+        run: pnpm -C contract test
+
+      # Artifact upload is observability, not a gate: a diagnostics hiccup
+      # must never turn a passing test run red (it did — upload-artifact
+      # rejects ':' in filenames, which our ISO log names used to contain).
+      - uses: actions/upload-artifact@v4
+        if: always()
+        continue-on-error: true
+        with:
+          name: contract-test-reports
+          path: |
+            contract/reports/
+            contract/logs/
+          if-no-files-found: ignore

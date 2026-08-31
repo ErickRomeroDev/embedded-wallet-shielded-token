@@ -1,4 +1,5 @@
 import path from "node:path";
+import { logFileTimestamp } from "./logger";
 export const currentDir = path.resolve(new URL(import.meta.url).pathname, "..");
 
 export interface Config {
@@ -11,7 +12,7 @@ export class LogicTestingConfig implements Config {
     "..",
     "logs",
     "logic-testing",
-    `${new Date().toISOString()}.log`
+    `${logFileTimestamp()}.log`
   );
   constructor() {}
 }
