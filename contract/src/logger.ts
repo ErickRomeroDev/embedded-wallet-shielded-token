@@ -4,6 +4,16 @@ import pinoPretty from "pino-pretty";
 import pino from "pino";
 import { createWriteStream } from "node:fs";
 
+/**
+ * Filesystem-safe ISO timestamp for log filenames.
+ *
+ * A bare `toISOString()` contains colons, which are illegal on NTFS and are
+ * rejected outright by actions/upload-artifact — a green CI run still fails at
+ * the artifact upload step if a log file is named that way.
+ */
+export const logFileTimestamp = (): string =>
+  new Date().toISOString().replace(/:/g, "-");
+
 export const createLogger = async (logPath: string): Promise<pino.Logger> => {
   await fs.mkdir(path.dirname(logPath), { recursive: true });
   const pretty: pinoPretty.PrettyStream = pinoPretty({

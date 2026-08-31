@@ -1,5 +1,6 @@
 import { networkId } from '@midnight-ntwrk/midnight-js';
 import path from 'node:path';
+import { logFileTimestamp } from './logger';
 export const currentDir = path.resolve(new URL(import.meta.url).pathname, '..');
 
 export const contractConfig = {
@@ -16,7 +17,7 @@ export interface Config {
 }
 
 export class UndeployedConfig implements Config {
-  logDir = path.resolve(currentDir, '..', 'logs', 'tui-standalone', `${new Date().toISOString()}.log`);
+  logDir = path.resolve(currentDir, '..', 'logs', 'tui-standalone', `${logFileTimestamp()}.log`);
   indexer = 'http://127.0.0.1:8088/api/v4/graphql';
   indexerWS = 'ws://127.0.0.1:8088/api/v4/graphql/ws';
   node = 'http://127.0.0.1:9944';
@@ -27,7 +28,7 @@ export class UndeployedConfig implements Config {
 }
 
 export class PreviewConfig implements Config {
-  logDir = path.resolve(currentDir, '..', 'logs', 'tui-preview', `${new Date().toISOString()}.log`);
+  logDir = path.resolve(currentDir, '..', 'logs', 'tui-preview', `${logFileTimestamp()}.log`);
   indexer = 'https://indexer.preview.midnight.network/api/v4/graphql';
   indexerWS = 'wss://indexer.preview.midnight.network/api/v4/graphql/ws';
   node = 'https://rpc.preview.midnight.network';
@@ -38,7 +39,7 @@ export class PreviewConfig implements Config {
 }
 
 export class PreprodConfig implements Config {
-  logDir = path.resolve(currentDir, '..', 'logs', 'tui-preprod', `${new Date().toISOString()}.log`);
+  logDir = path.resolve(currentDir, '..', 'logs', 'tui-preprod', `${logFileTimestamp()}.log`);
   indexer = 'https://indexer.preprod.midnight.network/api/v4/graphql';
   indexerWS = 'wss://indexer.preprod.midnight.network/api/v4/graphql/ws';
   node = 'https://rpc.preprod.midnight.network';
@@ -49,7 +50,7 @@ export class PreprodConfig implements Config {
 }
 
 export class MainnetConfig implements Config {
-  logDir = path.resolve(currentDir, '..', 'logs', 'tui-mainnet', `${new Date().toISOString()}.log`);
+  logDir = path.resolve(currentDir, '..', 'logs', 'tui-mainnet', `${logFileTimestamp()}.log`);
   indexer = 'https://indexer.midnight.network/api/v4/graphql';
   indexerWS = 'wss://indexer.midnight.network/api/v4/graphql/ws';
   node = 'https://rpc.midnight.network';

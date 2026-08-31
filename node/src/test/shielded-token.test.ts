@@ -2,7 +2,7 @@ import path from 'path';
 import * as api from '../api';
 import { type ModularProviders } from '../common-types';
 import { currentDir } from '../config';
-import { createLogger } from '../logger';
+import { createLogger, logFileTimestamp } from '../logger';
 import { TestEnvironment } from './simulators/simulator';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import 'dotenv/config';
@@ -21,11 +21,11 @@ import {
 let logDir: string;
 const network = process.env.TEST_ENV || 'undeployed';
 if (network === 'undeployed') {
-  logDir = path.resolve(currentDir, '..', 'logs', 'test-undeployed', `${new Date().toISOString()}.log`);
+  logDir = path.resolve(currentDir, '..', 'logs', 'test-undeployed', `${logFileTimestamp()}.log`);
 } else if (network === 'preprod') {
-  logDir = path.resolve(currentDir, '..', 'logs', 'test-preprod', `${new Date().toISOString()}.log`);
+  logDir = path.resolve(currentDir, '..', 'logs', 'test-preprod', `${logFileTimestamp()}.log`);
 } else {
-  logDir = path.resolve(currentDir, '..', 'logs', 'test-preview', `${new Date().toISOString()}.log`);
+  logDir = path.resolve(currentDir, '..', 'logs', 'test-preview', `${logFileTimestamp()}.log`);
 }
 const logger = await createLogger(logDir);
 

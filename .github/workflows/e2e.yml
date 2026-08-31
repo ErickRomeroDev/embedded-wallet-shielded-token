@@ -39,9 +39,8 @@ jobs:
         with:
           platforms: linux/amd64
 
+      # Version comes from the root package.json "packageManager" field.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
 
       - uses: actions/setup-node@v4
         with:
@@ -71,8 +70,12 @@ jobs:
             docker logs "$c" > "node/logs/docker/$c.log" 2>&1 || true
           done
 
+      # Artifact upload is observability, not a gate: a diagnostics hiccup
+      # must never turn a passing test run red (it did — upload-artifact
+      # rejects ':' in filenames, which our ISO log names used to contain).
       - uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
           name: e2e-${{ matrix.arch }}-reports
           path: |
