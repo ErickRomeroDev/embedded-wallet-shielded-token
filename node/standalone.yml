@@ -1,7 +1,24 @@
+# Every service pins `platform: linux/amd64` deliberately.
+#
+# Without it, the same tag resolves to a different binary per host: these images
+# publish multi-arch manifests, so an Apple Silicon machine silently pulls the
+# arm64 build while an x86_64 machine pulls amd64 — the classic "works on my
+# machine" split, and the reason a clean-machine E2E run could stall at wallet
+# sync while the chain looked healthy. Pinning amd64 makes every developer and
+# CI runner execute the binaries this stack is actually verified against.
+#
+# Two consequences worth knowing:
+#  * On Apple Silicon these run under emulation (Rosetta / QEMU). Expect
+#    noticeably slower wallet sync and proving; the waits in src/api.ts are
+#    bounded and will report a diagnostic rather than hang.
+#  * indexer-standalone stopped publishing arm64 at 4.3.4, so without this pin a
+#    bump past 4.3.3 fails on ARM at pull time with "no matching manifest for
+#    linux/arm64/v8". With the pin, bumps work on every host.
 services:
   proof-server:
     container_name: 'modular-proof-server'
     image: "midnightntwrk/proof-server:8.0.3"
+    platform: linux/amd64
     command: ["midnight-proof-server -v"]
     ports:
       - "6300:6300"
@@ -13,6 +30,7 @@ services:
   indexer:
     container_name: 'modular-indexer'
     image: 'midnightntwrk/indexer-standalone:4.0.1'
+    platform: linux/amd64
     ports:
       - '8088:8088'
     environment:
@@ -31,9 +49,10 @@ services:
       start_period: 10s
     depends_on:
       node:
-        condition: service_started
+        condition: service_healthy
   node:
     image: 'midnightntwrk/midnight-node:0.22.2'
+    platform: linux/amd64
     container_name: 'modular-node'
     ports:
       - "9944:9944"

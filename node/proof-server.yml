@@ -1,6 +1,9 @@
+# `platform` is pinned for the same reason as standalone.yml: without it the tag
+# resolves to a different binary on Apple Silicon than on x86_64.
 services:
   proof-server:
     image: "midnightntwrk/proof-server:8.0.3"
+    platform: linux/amd64
     command: ["midnight-proof-server -v"]
     ports:
       - "6300:6300"
