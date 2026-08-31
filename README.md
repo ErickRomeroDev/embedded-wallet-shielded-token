@@ -6,8 +6,6 @@ This project is built on the Midnight Network.
 
 What the embedded wallet unlocks: a full shielded-token flow — sync, balance, transaction balancing, signing, submission — entirely inside the browser page. The current Lace shielded-spend issue makes this pattern especially useful *today* (extension users can't spend shielded coins), but that's context, not the reason MintKey exists: the passkey wallet is an identity and custody model of its own, and everything here stands unchanged once the extension issue is fixed.
 
-**Live demo:** _redeploy pending — see Getting started_
-
 ## How it works
 
 One passkey, two domain-separated HKDF derivations of its PRF output:
